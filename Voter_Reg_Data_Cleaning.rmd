@@ -1,0 +1,1657 @@
+---
+title: "Voter Registration Cleaning"
+author: "Katherine Mason"
+format: html
+editor: source
+---
+
+### Import packages and data ###
+
+```{r, Load in R packages}
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(psych)
+library(ltm)
+library(Hmisc)
+library(knitr)
+library(stargazer)
+library(apaTables)
+library(xtable)
+library(lubridate)
+library(httr)
+library(janitor)
+
+```
+
+```{r, Import the raw data set}
+
+# Import raw data set
+df_raw_noid <- read.csv("Voter_Reg_Raw.csv")
+head(df_raw_noid) 
+
+df_raw_noid <- df_raw_noid[-c(1, 2),]
+head(df_raw_noid)
+
+nrow(df_raw_noid) # 20460
+
+##
+
+# Import data set with Bovitz IDs
+
+df_ids <- read.csv("Voter Registration Megastudy_July 2, 2025_15.18.csv")
+head(df_ids)  
+
+df_ids <- df_ids[-c(1, 2),]
+head(df_ids)
+
+df_ids <- df_ids %>%
+  dplyr::select(ResponseId, RESPONDENT_ID)
+df_ids
+
+nrow(df_ids)
+
+# Merge raw data set by Response ID to get Bovitz IDs
+df_raw <- merge(df_raw_noid, df_ids, by="ResponseId")
+df_raw
+
+nrow(df_raw) # 20460
+
+```
+
+```{r, Prepare for Murmuration}
+
+# Starting: 20460
+
+# Exclude those who did not finish the survey
+
+table(df_raw$Finished) # 16701 finished 
+
+df_murm <- df_raw %>%
+  filter(Finished == "True")
+
+nrow(df_murm) 
+
+# Remaining: 16701
+
+# Export for Mumuration
+# murm <- df_murm %>%
+#   dplyr::select(ResponseId, year_born, postal_code, state, firstname, lastname)
+
+# write.xlsx(murm, 'PII.xlsx')
+
+```
+
+```{r, Merge matched and raw data set}
+
+# Import the matched data set from Murmuration
+df_matched <- read.csv("Voter_Reg_Matched.csv")
+nrow(df_matched) # 16701
+
+# Merge based on ResponseID
+df_preexclude1 <- merge(df_raw, df_matched, by = "ResponseId", all.x = TRUE) # Keep all since did not filter by finished)
+
+nrow(df_preexclude1)
+
+# Remaining: 20460 
+
+```
+
+################################################ Exclusions ################################################
+
+```{r, A and B) Filter out demographic duplicates}
+
+# A -- Filter out demographic duplicates
+
+# Convert start_date to proper datetime format
+df_preexclude1 <- df_preexclude1 %>%
+  mutate(start_date_parsed = as.POSIXct(StartDate, format = "%Y-%m-%d %H:%M:%S"))
+
+head(df_preexclude1$start_date_parsed)
+
+# Dataset of repeats
+df_preexclude1 <- df_preexclude1 %>%
+  mutate(
+    firstname = na_if(firstname, ""),
+    lastname = na_if(lastname, ""),
+    postal_code = na_if(postal_code, ""),
+    state = na_if(state, ""),
+    RESPONDENT_ID = na_if(RESPONDENT_ID, "")
+  )
+
+# See how many duplicates for each entry
+repeats <- df_preexclude1 %>%
+  filter(!is.na(firstname) & !is.na(lastname) & !is.na(year_born) & !is.na(postal_code)) %>%
+  group_by(firstname, lastname, year_born, postal_code) %>%
+  filter(n() > 1) %>%
+  arrange(start_date_parsed, .by_group = TRUE)
+
+nrow(repeats) # 975
+
+# Export and manually inspect
+repeats <- repeats %>%
+  ungroup() %>%
+  dplyr::select(ResponseId, Finished, firstname, lastname, year_born, postal_code, start_date_parsed, registration_date)  
+
+# write.xlsx(repeats, 'repeats.xlsx')
+# All repeats matched similarly, except for a few exceptions in which people took twice but did not finish one of them 
+# (only sent finished to Murmuration)
+
+# Keep first entry only of demographic duplicates
+df_preexclude2 <- df_preexclude1 %>%
+  arrange(start_date_parsed) %>%  # Earliest first
+  distinct(firstname, lastname, year_born, postal_code, .keep_all = TRUE)
+
+nrow(df_preexclude2) # 18039
+
+# B -- Filter out Bovitz ID duplicates
+
+# Check for Bovitz ID duplicates
+repeats2 <- df_preexclude2 %>%
+  group_by(RESPONDENT_ID) %>%
+  filter(n() > 1)
+
+repeats2 <- repeats2 %>%
+  filter(!is.na(RESPONDENT_ID)) %>%
+  ungroup() %>%
+  dplyr::select(ResponseId, Finished, start_date_parsed, RESPONDENT_ID)  
+
+nrow(repeats2) # 33
+
+# Keep first entry only of Bovitz ID duplicates
+df_preexclude2 <- df_preexclude2 %>%
+  filter(!is.na(RESPONDENT_ID)) %>%
+  arrange(start_date_parsed) %>%  # Earliest first
+  distinct(RESPONDENT_ID, .keep_all = TRUE)
+
+nrow(df_preexclude2) # 18008
+
+```
+
+```{r, C) Under the age of 18}
+
+# C -- Filter those under the age of 18
+
+# Calculate age and exclude those under 18
+
+df_preexclude2$year_born <- as.numeric(df_preexclude2$year_born)
+
+df_preexclude2$age <- (2024 - (df_preexclude2$year_born)) 
+
+table(df_preexclude2$age) # 104 under 18
+
+# Exclude all under 18
+df_preexclude3 <- df_preexclude2 %>% filter(age > 17 | is.na(age))
+
+table(df_preexclude3$age)
+
+nrow(df_preexclude3) # 17904
+
+# Lost 104 to being under 18
+
+```
+
+```{r, D) Filter those who registered before launch}
+
+# D -- Filter those who registered before launch
+
+# Convert registration date to proper format
+df_preexclude3$registration_date_parsed <- mdy(df_preexclude3$registration_date)
+
+# Create registration year variable
+df_preexclude3$registration_year <- year(df_preexclude3$registration_date_parsed)
+
+table(df_preexclude3$registration_year)
+
+# Create variable for launch date
+launch_date <- mdy("09/27/2024")
+
+# Code whether registered before launch
+df_preexclude3$registered_prelaunch <- ifelse(df_preexclude3$registration_date_parsed < launch_date, 1,0)
+
+# Check how many were registered before vs. on/after launch
+table(df_preexclude3$registered_prelaunch)
+  
+# 2046 registered
+# 1636 (79.96%) prior to launch data
+# 410 (20.04%) registered after launch date
+
+# Export data set to try to get refund
+registered_prelaunch <- df_preexclude3 %>%
+  filter(registered_prelaunch == 1) %>%
+  dplyr::select(RESPONDENT_ID)
+
+# write.xlsx(registered_prelaunch, 'registered_prelaunch.xlsx')
+
+# Exclude those who registered pre-launch
+df_preexclude4 <- df_preexclude3 %>%
+  filter(registered_prelaunch != 1 | is.na(registered_prelaunch))
+
+nrow(df_preexclude4) # 16268
+
+# Lost 1636 to people being registered already
+
+# Filter those who registered before they took the survey
+
+# Create days since registration variable
+
+# Create time variable (in days)
+df_preexclude4$registration_date_parsed <- as.Date(df_preexclude4$registration_date_parsed)
+df_preexclude4$start_date_parsed <- as.Date(df_preexclude4$start_date_parsed)
+
+# Difference in days
+df_preexclude4$days_between <- as.numeric(df_preexclude4$registration_date_parsed - df_preexclude4$start_date_parsed)
+
+table(df_preexclude4$days_between)
+
+# Filter anyone below 0 (20 people)
+df_preexclude5 <- df_preexclude4 %>%
+  filter(days_between >= 0 | is.na(days_between))
+
+nrow(df_preexclude5) # 16248
+
+```
+
+```{r, E and F) State exclusions}
+
+# E -- States that should have not been included
+
+# Exclude states who should have been excluded due to not having online registration
+states_to_exclude <- c("Alaska", "American Samoa", "Arkansas", 
+                       "Mississippi", "Montana", "New Hampshire", 
+                       "North Dakota", "South Dakota", "Texas", "Wyoming",
+                       'I do not reside in the United States')
+
+table(df_preexclude5$state %in% states_to_exclude)
+# 43 people 
+
+# Export for refund
+state_refund <- df_preexclude5 %>% 
+  filter((state %in% states_to_exclude)) 
+
+# write.xlsx(state_refund, 'state_refund.xlsx')
+
+df_preexclude6 <- df_preexclude5 %>% 
+  filter(!(state %in% states_to_exclude)) 
+
+nrow(df_preexclude6) 
+
+# Remaining: 16205
+
+# Lost 40 to states that should have not been included
+
+# F -- States collected past their deadline
+
+state_table_IDs <- df_preexclude6 %>%
+  dplyr::select(ResponseId, state, StartDate) %>%  # counts rows by state and StartDate
+  arrange(state, StartDate)
+
+# write.xlsx(state_table_IDs, 'state_table_IDs.xlsx')
+
+# After hand code, make new data set with IDs to exlude
+state_passed_deadline <- read.xlsx("To_Exclude_Passed_Deadline.xlsx")
+
+nrow(state_passed_deadline) # 750
+
+# Delete respondents who took the survey past registration deadline
+df_preexclude7 <- df_preexclude6 %>%
+  filter(!ResponseId %in% state_passed_deadline$ResponseId)
+
+nrow(df_preexclude7)
+
+# Remaining: 15455 
+
+# Lost 750 to people taking it after the deadline in their state
+
+```
+
+# 15,455 eligible participants
+
+```{r, G) Filter out participants with missing demographics}
+
+# G --  Filter out any missing data
+
+# Data set of missing for refund
+missing <- df_preexclude7 %>% 
+  dplyr::filter(if_any(c(ResponseId, firstname, lastname, year_born, postal_code, state), is.na)) 
+                
+missing <- missing %>%                 
+  dplyr::select(ResponseId, firstname, lastname, year_born, postal_code, registration_date)
+
+nrow(missing) # 320
+
+# Export and inspect, make sure not filtering anyone who was able to be matched 
+# write.xlsx(missing, 'missing.xlsx') # None were matched with the voter file
+
+# If missing on either demographic variable, get rid of
+df_preexclude8 <- df_preexclude7 %>% 
+  dplyr::filter(!if_any(c(firstname, lastname, year_born, postal_code, state), is.na))
+
+nrow(df_preexclude8) # 15135 
+
+# Lost 320 to having missing demographic data
+
+```
+
+```{r, H) Check postal code matching}
+
+# H -- Postal code mismatched / nonexistant zipcodes
+
+# Load in postal codes and states
+zip_data <- read_csv("ZIP_Locale_Detail.csv") 
+
+# Clean the names from postal code zip file
+zip_data <- zip_data %>% clean_names()
+
+# Check how many over 5 numbers and fix
+df_preexclude8 %>% 
+  filter(nchar(postal_code) > 5)
+
+df_preexclude8 <- df_preexclude8 %>%
+  mutate(postal_code = ifelse(postal_code == "XXXXX-XXXX", "XXXX", # (deidentified)
+                              postal_code)) %>%
+  mutate(postal_code = as.character(postal_code))
+
+sum(nchar(as.character(df_preexclude8$postal_code)) > 5, na.rm = TRUE) # All postal codes in the correct format 
+
+# Flag and remove invalid ZIPs and ZIP/state mismatches 
+
+# Convert state names to state abbreviations for matching
+df_preexclude8 <- df_preexclude8 %>%
+  mutate(
+    state_reported = state.abb[match(state, state.name)],  
+    state_reported = ifelse(state == "District of Columbia", "MD", state_reported) # Use MD for matching purposes 
+  )
+
+# Pull zip codes, make numeric, and remove any repeats from zip data set, so have just postal code and state abbreviation
+zip_small <- zip_data %>% 
+  dplyr::select(postal_code = delivery_zipcode, true_state = physical_state) %>% 
+  unique()
+
+# Bind data with zip codes and see if they match
+df_preexclude9 <- df_preexclude8 %>% 
+  left_join(zip_small, by = "postal_code") %>% # Bind
+  dplyr::mutate(state_match = state_reported == true_state) # Code true if match, false if they don't
+
+nrow(df_preexclude9) # 15145 - few rows added because of duplicate postal codes
+
+# Because some postal codes correspond to more than one state, some participants were duplicated
+# Just keep first duplicate (inspected, and first entry is always the correct one)
+
+df_preexclude10 <- df_preexclude9 %>%
+  distinct(ResponseId, .keep_all = TRUE)
+
+nrow(df_preexclude10) # 15135 correct now
+
+# Examine mismatches
+zip_mismatch <- df_preexclude10 %>% 
+  filter(state_match == F)
+
+nrow(zip_mismatch) # 110
+ 
+# Export blanks and inspect
+zip_mismatch_blanks <- df_preexclude9 %>% 
+  filter(is.na(state_match)) %>% 
+  dplyr::select(ResponseId, postal_code, state, state_reported, true_state, state_match)
+
+nrow(zip_mismatch_blanks) # 130
+
+# Hand code blanks (T/F) and provide reason why they were coded a certain way (e.g., not a valid postal code)
+# write.xlsx(zip_mismatch_blanks, 'zip_mismatch_blanks.xlsx')
+
+# Give blanks the proper code based on the manual coding
+
+# Falses
+false_ids <- c(
+  "R_10P38J456DCDz7O", "R_1cedLXynz5QqlGM", "R_1DHcXOs3ugAVE3v", "R_1ee79NRhNAZpwLy", "R_1FLN1fEptqo7NG0", "R_1FUqREWSV0GQRXM",
+  "R_1gMHY9rwIdGZmNv", "R_1I60Faa7lGzJbTa", "R_1IT6ficW4zRaNG1", "R_1Kr2B8uQ9oWru6e", "R_1ls1ewHiI4Ad7sV", "R_1lyBYmkWwflvzHz",
+  "R_1pqc7m7p6IXFiyB", "R_1QSONnFuKaWU8yP", "R_1SB8w47ayqrjSwX", "R_32HVQZUW9KR9bEJ", "R_33TePU1sZ7bHVAZ", "R_3GNBzSpGc1OsmHo",
+  "R_3HDRYDBzEhII5A5", "R_3iEyHlnKdCSZu1X", "R_3J2ZoTej47xvjiN", "R_3MPP4QMgBC193r3", "R_3OOAc19gOKCl6kd", "R_3Piajpvq75nXR1M",
+  "R_3RNNIlj0ddh8vDP", "R_3RrQ1xmJMDNalBL", "R_3s4f60AB5hYNqIX", "R_3WMb5udjA4Q8Zvr", "R_3yIV0K2lZM3RKU1", "R_3zr25x7L7qD702k",
+  "R_51k8jA5FbaYc0St", "R_56BXGf18uIoi8al", "R_5aKwzJgmpZlaZUV", "R_5B4LR3BEMHGMbNv", "R_5diBNYS1v5GgHVz", "R_5E6uzMlIb7fnjx3",
+  "R_5j7gVyc44IIoqvb", "R_5t37CsD6SltP6f7", "R_5Uz5aCPgx1ZdffH", "R_5xMdpbvWnXixrvH", "R_60uy5Rncjj3PXfb", "R_61sezjXCI8PPZC8",
+  "R_64CR2olffsc7oHG", "R_6AZhJhLxULRDFZX", "R_6davqPBrislJ5Yv", "R_6jkVsET1pknNedb", "R_6jZj8CDIby7e5gX", "R_6knVV0iYs1oxX60",
+  "R_6MNXoJx409jkA6t", "R_6NKGLdlp4x7JlB6", "R_72zEpj1DxIscEvD", "R_7Csbf2vq1pVgbWK", "R_7eb3g4iQf5cINeg", "R_7ElsBiPrrQQ937r",
+  "R_7ER4SFyhhT8XWb1", "R_7IMa4nYPSEysowN", "R_7qEqHCyWNex10cm", "R_7R3QZs4ZAQiAr09", "R_7uQuwqgBuoiZpsJ", "R_7WwzOcLCygGzQy7",
+  "R_7X1gD08OW5gMLMt"
+)
+
+df_preexclude10 <- df_preexclude10 %>%
+  mutate(state_match = ifelse(ResponseId %in% false_ids, FALSE, state_match))
+
+# Trues
+true_ids <- c(
+  "R_16jwDoOK4fQTevL", "R_17Y99beTEYTp4o9", "R_19Q8CgFRNc7Ca7T", "R_1DJdtlNHYaQ0Prb", "R_1gbxnGHEVEX4J96", "R_1K7iqp4EOGoKHtF",
+  "R_1KuNc4CY5jk4J2Z", "R_1mgiSKrnu1nI1vw", "R_1oaNjlCBicNr3Cz", "R_1p5AFpH6fRIedZI", "R_1pbVdZ5FavEW7lp", "R_1ppMbTZLmY1QUnL",
+  "R_1QmzG35Tbpu5whV", "R_1qU55rYVqu9IXnk", "R_1sR0Z8BGfw0L0kb", "R_1tL0icYjIL1CnQt", "R_1ym9Doy8EYl7ywO", "R_2eIuMQ4RDeSO69y",
+  "R_34UYnWuCP0xryFz", "R_36bRKwEScvWjIE9", "R_3dvGpHr7cFspSi5", "R_3GAMa6fiyJdtpta", "R_3GwAlaik6zK64Cf", "R_3HvG9thcrq4rns6",
+  "R_3JFeDf0WqteY4Mf", "R_3mad2UyHoNrRlPK", "R_3NKV4FBY1SSaDwC", "R_3NmeXGQR0oP6H5L", "R_3PYoFqKRYur7K8X", "R_3qwjpWjqK9lywCp",
+  "R_3vYfFWJtF7QAYhl", "R_3X1FxmHGEEpgLvD", "R_3Xb5BE9gjdEBoDQ", "R_3YyvMajZX0eQMW8", "R_4nT2kySkiwL6GrJ", "R_57fNAK0bX8APFRL",
+  "R_5d4yCnAygusGlqB", "R_5jjFtrCLkXFx5XB", "R_5k7QwtvWTsfgF0Z", "R_5k8A4xU6sDMMqDn", "R_5L4VZ2lhHOJMTXr", "R_5LcM96n2NgfjIJC",
+  "R_5PKPyh6pa0XLtXJ", "R_5QEW8m3mkxEMlTp", "R_5r2tyQZcYcJy0cs", "R_5ruiZqgr4PT9Dal", "R_5wucR6lj2g0pGXG", "R_5yft6rNdQ4Mfhlf",
+  "R_61XSiulG9L0n2YZ", "R_6294fLod4dswTkZ", "R_66exU4UHs0wQKni", "R_6DTC0Ldo8s8MDh2", "R_6lcF14tCtDDUUQ9", "R_6rYDo3qCOmwq2nK",
+  "R_6X3AzKmja7J5Uop", "R_72L93pucNkLCbia", "R_748XN3FjYmImgC0", "R_7JKtoWlJmbFOs2Q", "R_7JL6Ov0Ogc88YKl", "R_7KvwkCyzvhcO6EI",
+  "R_7MQf1gxsZfmTqDf", "R_7qfRqXwoeEVlxe4", "R_7qWNZymFSDyzRHo", "R_7qylDKvx39TKfcp", "R_7sv3ALOExgabRaO", "R_7TY7bYryMThvSbv",
+  "R_7Vq18XuAhYPX5W4", "R_7YaL3G0t1Sed1yx", "R_8rByzmR3w8truxk"
+)
+
+table(df_preexclude10$state_match) # 171 mismatches
+
+df_preexclude10 <- df_preexclude10 %>%
+  mutate(state_match = ifelse(ResponseId %in% true_ids, TRUE, state_match))
+
+# Make sure no more blanks
+ df_preexclude10 %>% 
+  filter(is.na(state_match)) %>% 
+  dplyr::select(ResponseId, postal_code, state, state_reported, true_state, state_match) # Good
+
+# Exclude those who had zip code state mismatches or who did not enter a valid zip code
+df_preexclude11 <- df_preexclude10 %>%
+  filter(state_match == TRUE)
+
+nrow(df_preexclude11)
+
+# Remaining: 14964 
+
+# Lost 171 to mismatches
+
+```
+
+```{r, I and J) Remove initials and fake names}
+
+# I -- Remove initials 
+
+# Remove those who only put initials for their name
+
+# Create new variables that have no punctuation and calculate the number of letters
+df_preexclude11 <- df_preexclude11 %>% 
+  mutate(firstname_clean =  gsub('[[:punct:] ]+', '', firstname), # Remove punctuation
+         lastname_clean =  gsub('[[:punct:] ]+', '', lastname), 
+         fn_letters = nchar(firstname_clean), # Count characters
+         ln_letters = nchar(lastname_clean), 
+         full_names = paste0(firstname_clean, " ", lastname_clean)) # Variable with full name
+
+# Check who put just initials
+initials <- df_preexclude11 %>% 
+  filter(fn_letters == 1 | ln_letters == 1)
+
+initials <- initials %>%
+  dplyr::select(ResponseId, firstname, lastname, registration_date)
+
+nrow(initials) # 168
+
+# Export and inspect, make sure not filtering anyone who was able to be matched 
+# write.xlsx(initials, 'initials.xlsx') # None were matched with the voter file
+
+# Filter out if only put one initial
+df_preexclude12 <- df_preexclude11 %>%
+  filter(!(fn_letters == 1 | ln_letters == 1))
+
+nrow(df_preexclude12) # 14796
+
+# Lost 168 to initials
+
+# J -- Remove fake names
+
+# Read in fake names dataset generated by GPT
+fakenameslist <- read_csv("fake_names_list.csv") # List of fake names generated by GPT
+
+# Check who got flagged by the fake names (e.g., Joe Mama)
+fakenames <- df_preexclude12 %>% 
+  filter(full_names %in% fakenameslist$Name) %>%
+  dplyr::select(ResponseId, firstname, lastname, registration_date)
+
+nrow(fakenames) # 13
+
+# Export fake names and inspect
+# write.xlsx(fakenames, 'fakenames.xlsx')
+# All seemingly fake, none matched to voter file
+
+# Remove any fake names
+df_preexclude13 <- df_preexclude12 %>% 
+  filter(!full_names %in% fakenameslist$Name)
+
+nrow(df_preexclude13) # 14783
+
+# After hand coding, remove additional Ps who did not provide a valid name (e.g., more fake names, privacy concerns, same name first and last)
+df_preexclude14 <- df_preexclude13 %>%
+  filter(!ResponseId %in% c('R_3oGB0oeh4dHXeHI', 'R_5QuCuH1qoFjr7Ie', 'R_191k2wc16zRCTZQ', 'R_1QzjM7XwoyoJTwi', 'R_6lxMtPSVRDQNJgw', 
+                            'R_7MmuKbPx1g3WT9X', 'R_59rSaF7kZixI5bz', 'R_6BkvSZF1daN000n', 'R_1XLmwRaza533ojv', 'R_1YnUD8bLEFvO24W',
+                            'R_3COTFFfbm7JCiiX','R_3EaNgF6k5M1q28p', 'R_3IbFQFqM9rIGmQk','R_3pM1twCBkjGRNcc', 'R_52r8WEhMU5CGcH0', 
+                            'R_5p9d8reMpF6cOaZ','R_6gOcMCuiwEvGRoF', 'R_6pKoQZ2S1FT0n6N','R_6VSwznYCXcpEYBr', 'R_732Gl3cuXO8rRHH', 
+                            'R_7C4laq9AgerwsdO', 'R_7ivYqWQIOED27hG', 'R_7nWnSZubtXfPTVL','R_14cogdhZRq0mf3Q','R_3LdygXZjMPp7vxg',
+                            'R_6PzWj0m6GWMWwBZ', 'R_6u6BlEul3zsZzq1', 'R_7P1QpTjJQqVjJFw', 'R_7pS1ftYyvhuS7al', 'R_7R7zKj6gd7x79Bz',
+                            'R_1e8BW2hw8p8nrPg', 'R_18OHAOVptcdqdu8', 'R_1C2xvDheU0nOLkt', 'R_1DweHjhFVjBc85P', 'R_1EFiNkmLIlSJHYv',
+                            'R_1jfBwUq3RAWo6sP', 'R_1O8GrY3Y0JiSlTw', 'R_1QE8qdjbsdbz58l', 'R_1QnbRyeFtBN41QR','R_1sdn4FziZ064gds', 
+                            'R_1SvRNHNEWj6eBS0', 'R_1yDifHxJUTSCGgV', 'R_1Yvb4gomWv5meJP','R_34f8U61ybZcTmed', 'R_3gRSWm7A8LqZaj5', 
+                            'R_3MfEt9Ebdsanvoq', 'R_3qWWY5brhawZT7K', 'R_3qyKfaD5OTKL0eu', 'R_3S5Y13INq6BpBpb', 'R_3wj9G6PV2oumdhf',
+                            'R_507zNjFkdS34hnH', 'R_51c4esk2riW4QmM', 'R_51hGRWpYq9H0Zgu', 'R_52WVBAy1jTaYtTZ', 'R_53C8S2SJpSCFbq1', 
+                            'R_53KoszKV28QdMRz', 'R_55d2K4yNu80FJlf', 'R_5DOcJ6nVTHZyocX', 'R_5MR4DXez81oHo7d', 'R_5oBljlBjZHOCcut', 
+                            'R_5R98lUPA0LPhSEB', 'R_5riz9g1qWev2B4E', 'R_65G9jOg4T2zXNpT', 'R_6aULeCG3a6zoJtD','R_6C6ZBZpNhWYG9ep',
+                            'R_6dExloPo94qU1Ah', 'R_6DZE3yieMmQ8IDj', 'R_6gjTUBA0SSXH3CV', 'R_6IgBKftIWXERGXE', 'R_6jV9FtsWnwwqAcK', 
+                            'R_6VL7JhtopB2QKyE', 'R_700Pv3QiPkvIQCC', 'R_7DgoLhJ4c4b27dL', 'R_7FbSFNJOWqbF4zq', 'R_7fkc9bAV6qyKF4U', 
+                            'R_7LbNvfKYCtGha5n','R_7nkpdFqViMBJQKu', 'R_7QfKxoqYvqUh3Vz', 'R_7ro7yy3PCPce3rb', 'R_7S8vMPwnCW6v8SR', 
+                            'R_7VDRanS3Bytdlzi', 'R_1PsOkGtKIRzO2op', 'R_1rN98DEpFMwJx73', 'R_5pU78cleNsOusKd', 'R_3ro4808jIVGHwCR', 
+                            'R_6lubeROeEdjhjvA', 'R_7t4nzPzoww1iGe2', 'R_5jYE3g8nkykNACt', 'R_6yl2tKr0ApDThzX', 'R_16jwDoOK4fQTevL', 
+                            'R_3kMOfCcwGPEcTSA', 'R_6m0tlPD2LOJsFep', 'R_5scTUIx7Ey1SB1k', 'R_15lRd05IBmoT7K9','R_51TOnahCHdvGpoe', 
+                            'R_6qdBL77wuiH0cru', 'R_6neMLzjjm5r8DvR', 'R_5AsQ870Kpp12Bsl', 'R_5njmGycl0WBIZLb','R_31bVyV3otosKlZe', 
+                            'R_7lhHgwNcjWltwjN', 'R_5YScDpiHbsjLBPH', 'R_329bi8WOgHbRD93', 'R_7b1gw3Ia85IaySB', 'R_6i6JvmtfccQuPD3', 
+                            'R_3B6saDIZsgS4LkZ', 'R_3GHoBjAXiRVaBqm','R_7o5s8Ab7q3BJoJz', 'R_53jSum8ZhuD1uQD','R_7ZOu4d1B8MSayad', 
+                            'R_67AUNoQSOy1xeBr', 'R_5JUYOzYJjr9aQVY', 'R_5lYSJxmriHWXfZA', 'R_6PZCEM3Wy43ipRM','R_6psWwnwYNT6fkcm', 
+                            'R_5dKhpg733nEWamI', 'R_11i4dkdNIl490Gn', 'R_1hXQD4Xdd5FIbNr', 'R_5xlPF6JoszolDDb','R_5ZVbgD0JGq6kaVr', 
+                            'R_7qh9s4cjP2uhydJ', 'R_10jKFdz12rLIDes', 'R_3a9SVl7V6siRtvZ', 'R_35kmIe2sLR3HV73','R_5dp5HoVR46yWiKl', 
+                            'R_3dJmjWacHBOa3Yd', 'R_5YOHAexkEzxIIPT','R_3dM2vURlcJJXRL4', 'R_5TZ8cPPFdfAJXWF','R_6JDG2rYbsjW1SOk', 
+                            'R_5dMosExLsTxw2Wt', "R_7YnvjYUZymfD6TA", 'R_5QcrCToQe59kq4J','R_1CDEPNj5pG8V5Vy', 'R_1n0ZKEYmKTUL38A', 
+                            'R_7uXZAE1dk7MVBxD','R_7SJlvhmUAPe2jkj', 'R_3aJnZzxvr72elhf','R_7DdqruEBzbnyuKl','R_3K8PoUFbDdZsbYp', 
+                            'R_1B5Vowrm2PL7aFc', 'R_3lY1yY9oaDa3kcC', 'R_3r1bHMYK9OhAycN', 'R_5oiGhVQ1q4PHQaA', 'R_7mn1DwK55zOBKX3',
+                            'R_1hOFrqApi880lMt', 'R_1m9r7e5BxXZwKUp', 'R_1zezNn8b47VUkF1', 'R_6pVrqqxAnKeljTr', 'R_7P19MiQjx9hIoBq',
+                            'R_7DOOnu2xDR3zUou', 'R_7FiK4aWwJfW4iCR', 'R_5L4VZ2lhHOJMTXr', 'R_1yllTsKmfMA32Ao', 'R_1n8QXgVtOUhcbkJ',
+                            'R_6P4BTmkgfqEo6Vm', 'R_8HqcwqKpES7XpFL', 'R_5KcCuCC4JGRnUNX', 'R_7xl3CAOSmfsGI3n', 'R_5YP0CyRqTFlj1xY',
+                            'R_3wtN7z7Hs0TnXg6', 'R_5DNqg32kNxivvbo', 'R_57xTI1FDEQRZLT8', 'R_3quK56rwqxAtUwV', 'R_6gN1Hl9o0dH2ANN',
+                            'R_6j9RS7cpwO0Q9vD', 'R_6ze9lNh4tMThIuf', 'R_5JaQVzAsbgC5OV3', 'R_15HMGZpFG30wpAc', 'R_1U492YPMlyNP4Os',
+                            'R_7j9UMH8exHvC6mv', 'R_1Pusk0wDfmzqR6R', 'R_7HQYmqZmTpoFiil'
+                            )) 
+
+nrow(df_preexclude14) # 14621
+
+# Lost 175 to fake names
+
+```
+
+```{r, K) Manipulation check}
+
+# STEP 5 - Filter out those who failed manipulation check
+
+# Make sure data set does not include participants who failed the manipulation check
+
+table(df_preexclude14$attentioncheck_color) # 102 failed
+
+df_preexclude15 <- df_preexclude14 %>%
+  filter(!(attentioncheck_color %in% c("Blue", "Green", "Orange", "Red")))
+
+nrow(df_preexclude15) 
+
+# Remaining: 14519
+
+# Lost 102 to manipulation check
+
+```
+
+```{r, L) Filter those who did not finish}
+
+table(df_preexclude15$Finished) # 12896 finished 
+
+# Check if finished depended on condition
+
+# Re-name the condition variable to be clearer
+df_preexclude15 <- df_preexclude15 %>%
+  rename(
+    condition = FL_20_DO,
+  )
+
+df_preexclude15 <- df_preexclude15 %>%
+  mutate(condition = case_when(
+    condition == "EscalatingCommitmenttoVoterRegistration" ~ "EscalatingCommitment",
+    condition == "Implementationintentions" ~ "ImplementationIntentions",
+    condition == "MoralReasonstoVote" ~ "MoralReasons",
+    condition == "Personalimportance" ~ "PersonalImportance",
+    condition == "Self-GeneratedSocialNorms" ~ "SelfGeneratedNorms",
+    condition == "Anti-Government" ~ "DistrustSalience",
+    condition == 'DynamicNorms|Anti-Government|Implementationintentions|InterdependentConstrual|EscalatingCommitmenttoVoterRegistration|SystemJustification|ControlCondition|Personalimportance|MoralReasonstoVote|Self-GeneratedSocialNorms' ~ NA, 
+    condition == '' ~ NA, 
+    TRUE ~ condition
+  ) %>% 
+  as.factor()) %>%
+  mutate(condition = relevel(condition, ref = "ControlCondition"))
+
+table(df_preexclude15$condition)
+
+# Create numeric finished variable
+df_preexclude15$Finished_n <- ifelse(df_preexclude15$Finished == "True", 1,
+                              ifelse(df_preexclude15$Finished == "False", 0, NA))
+
+# Fit the model
+Attrition_Model <- lm(Finished_n ~ condition, data = df_preexclude15)
+summary(Attrition_Model)
+
+Attrition_Model_robust <- coeftest(Attrition_Model, vcov = vcovHC(Attrition_Model, type = "HC3"))
+Attrition_Model_robust
+
+# Use two tailed lm function to format
+Attrition_Model_Results <- format_lm_output_twotailed(Attrition_Model_robust, Attrition_Model)
+
+# Outputs:
+Attrition_Model_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Attrition_Model_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+##
+
+# Filter those who did not finish
+df_preexclude16 <- df_preexclude15 %>%
+  filter(Finished == "True")
+
+nrow(df_preexclude16) 
+
+# Remaining: 12896
+
+# Lost 1623 to not finishing
+
+# Make sure everyone has a unique identifier
+n_occur <- data.frame(table(df_preexclude16$ResponseId))
+
+n_occur[n_occur$Freq > 1,]
+
+# No duplicates
+
+# Make final data set (strict restrictions)
+df <- df_preexclude16
+
+nrow(df)
+
+# Final sample size: 12896
+
+```
+
+# Final sample size: 12,896
+
+################################################ Data Cleaning ################################################
+
+```{r, Rename variables and check variable types}
+
+# Create registration and voting DVs
+
+# Registration: 0 = did not register, 1 = registered
+df <- df %>%
+  mutate(register = case_when(
+    is.na(registered_prelaunch) ~ 0,
+    registered_prelaunch == 0 ~ 1,
+    TRUE ~ 0
+  )) %>%
+  mutate(register = as.numeric(register))
+
+table(df$register) 
+
+# Voting: 0 = did not vote, 1 = voted
+df <- df %>%
+  mutate(vote = case_when(
+    is.na(voted_2024) ~ 0,
+    voted_2024 == 1 ~ 1,
+    TRUE ~ 0
+  )) %>%
+  mutate(register = as.numeric(register))
+
+table(df$vote) # 1.09% voted 
+
+# Rename variables 
+
+df <- df %>%
+  rename(
+    pre_intention = pre_intention_1,
+    interest = interest_4,
+    voteInt = voteInt_13,
+    trust_elect = trust_elect_1,
+    trust_exec = trust_branches_1,
+    trust_legis = trust_branches_2,
+    trust_jud = trust_branches_3,
+    efficacy_1 = efficacy_1_1,
+    efficacy_2 = efficacy_2_1,
+    efficacy_3 = efficacy_3_1,
+    norms_1 = norms1_1,
+    norms_2 = norms2_1,
+    ide_soc = ideology_1,
+    ide_eco = ideology_2,
+    incomeOLD = income, # Re-code income below
+    eduOLD = edu, # Re-code education below
+    raceOLD = race,
+  )
+
+# Make sure numeric variables are numeric
+df <- df %>%
+  mutate(across(c(
+    pre_intention, interest, voteInt, trust_elect, trust_exec, trust_legis, trust_jud,
+    efficacy_1, efficacy_2, efficacy_3, norms_1, norms_2, ide_soc, ide_eco,
+  ), as.numeric))
+
+# Make sure factor variables are factor
+df <- df %>%
+  mutate(across(c(
+    linkClicked, vote_today, party, political_lean, gender, raceOLD, condition, register, vote
+  ), as.factor)) 
+
+# Re-name the condition variable to be clearer
+df <- df %>%
+  mutate(condition = case_when(
+    condition == "EscalatingCommitmenttoVoterRegistration" ~ "EscalatingCommitment",
+    condition == "Implementationintentions" ~ "ImplementationIntentions",
+    condition == "MoralReasonstoVote" ~ "MoralReasons",
+    condition == "Personalimportance" ~ "PersonalImportance",
+    condition == "Self-GeneratedSocialNorms" ~ "SelfGeneratedNorms",
+    condition == "Anti-Government" ~ "DistrustSalience",
+    TRUE ~ condition
+  ) %>% 
+  as.factor()) %>%
+  mutate(condition = relevel(condition, ref = "ControlCondition"))
+
+table(df$condition)
+
+# Create numeric version of link click variable 
+df$linkClicked_n <- as.numeric(df$linkClicked)-1
+
+table(df$linkClicked_n) # 2.78% clicked the link
+
+# Recode income options into numeric values
+df <- df %>%
+  mutate(income = as.numeric(case_when(
+    incomeOLD == "Less than $25,000" ~ 1,
+    incomeOLD == "$25,000 -- $49,999" ~ 2,
+    incomeOLD == "$50,000 -- $74,999" ~ 3,
+    incomeOLD == "$75,000 -- $99,999" ~ 4,
+    incomeOLD == "$100,000 -- $200,000" ~ 5,
+    incomeOLD == "More than $200,000" ~ 6,
+    TRUE ~ NA_real_  
+  )))
+
+# Recode education options into numeric values
+
+df <- df %>%
+  mutate(edu = as.numeric(case_when(
+    eduOLD == "Less than high school degree" ~ 1,
+    eduOLD == "High school graduate (high school diploma or equivalent including GED)" ~ 2,
+    eduOLD == "Some college but no degree" ~ 3,
+    eduOLD == "Associate degree in college (2-year)" ~ 4,
+    eduOLD == "Bachelor's degree in college (4-year)" ~ 5,
+    eduOLD == "Master's degree" ~ 6,
+    eduOLD == "Doctoral or professional degree (e.g., JD, MD, PhD)" ~ 7,
+    TRUE ~ NA_real_  
+  )))
+
+# Create numeric version of link click, register, and vote variables
+df$linkClicked_n <- as.numeric(df$linkClicked)-1
+table(df$linkClicked_n) 
+
+df$register_n <- as.numeric(df$register)-1
+table(df$register_n) 
+
+df$vote_n <- as.numeric(df$vote)-1
+table(df$vote_n) 
+
+```
+
+```{r, Create knowledge scale}
+
+# Create variable indicating if they got voting age q correct (18 is correct)
+df$voting_age_correct <- ifelse(df$voting_age == '18', 1,0)
+table(df$voting_age_correct)
+
+# Create variable indicating if they got frequency of elections q correct (every 4 years is correct)
+df$frequency_elections_correct <- ifelse(df$frequency_elections == 'Every 4 years', 1,0)
+table(df$frequency_elections_correct)
+
+# Create variable indicating if they got date of elections correct (Tuesday, November 5th, 2024 is correct)
+df$election_date_correct <- ifelse(df$election_date == "Tuesday November 5th, 2024", 1,0)
+table(df$election_date_correct)
+
+# Create variable indicating if they got who won in their state in 2020
+df$majority_vote_correct <- ifelse(df$state == "Rhode Island" & df$majority_vote_2020 == "Joe Biden", 1,
+                                    ifelse(df$state == "South Carolina" & df$majority_vote_2020 == "Donald Trump", 1,        
+                                    ifelse(df$state == "Arizona" & df$majority_vote_2020 == "Joe Biden", 1,     
+                                    ifelse(df$state == "Florida" & df$majority_vote_2020 == "Donald Trump", 1,   
+                                    ifelse(df$state == "Georgia" & df$majority_vote_2020 == "Joe Biden", 1,   
+                                    ifelse(df$state == "Indiana" & df$majority_vote_2020 == "Joe Biden", 1,   
+                                    ifelse(df$state == "Kentucky" & df$majority_vote_2020 == "Donald Trump", 1,   
+                                    ifelse(df$state == "Ohio" & df$majority_vote_2020 == "Donald Trump", 1,   
+                                    ifelse(df$state == "Tennessee" & df$majority_vote_2020 == "Donald Trump", 1,   
+                                    ifelse(df$state == "New Mexico" & df$majority_vote_2020 == "Joe Biden", 1,     
+                                    ifelse(df$state == "Missouri" & df$majority_vote_2020 == "Donald Trump", 1,   
+                                    ifelse(df$state == "Idaho" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "North Carolina" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "Oklahoma" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "Delaware" & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "District of Columbia " & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "Kansas" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "Louisiana" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "Maine" & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "Maryland" & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "Minnesota" & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "New Jersey" & df$majority_vote_2020 == "Joe Biden", 1,       
+                                    ifelse(df$state == "Oregon" & df$majority_vote_2020 == "Joe Biden", 1,      
+                                    ifelse(df$state == "Virginia" & df$majority_vote_2020 == "Joe Biden", 1,        
+                                    ifelse(df$state == "West Virginia" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "Wisconsin" & df$majority_vote_2020 == "Joe Biden", 1,   
+                                    ifelse(df$state == "Connecticut" & df$majority_vote_2020 == "Joe Biden", 1,     
+                                    ifelse(df$state == "Nebraska" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "Illinois" & df$majority_vote_2020 == "Joe Biden", 1,  
+                                    ifelse(df$state == "Alabama" & df$majority_vote_2020 == "Donald Trump", 1,  
+                                    ifelse(df$state == "California" & df$majority_vote_2020 == "Joe Biden", 1,        
+                                    ifelse(df$state == "Iowa" & df$majority_vote_2020 == "Donald Trump", 1,      
+                                    ifelse(df$state == "Michigan" & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "Pennsylvania" & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "Nevada" & df$majority_vote_2020 == "Joe Biden", 1, 
+                                    ifelse(df$state == "Utah" & df$majority_vote_2020 == "Donald Trump", 1, 
+                                    ifelse(df$state == "Massachusetts" & df$majority_vote_2020 == "Joe Biden", 1,       
+                                    ifelse(df$state == "New York" & df$majority_vote_2020 == "Joe Biden", 1,       
+                                    ifelse(df$state == "Colorado" & df$majority_vote_2020 == "Joe Biden", 1,       
+                                    ifelse(df$state == "Washington" & df$majority_vote_2020 == "Joe Biden", 1,   
+                                    ifelse(df$state == "Hawaii" & df$majority_vote_2020 == "Joe Biden", 1,  
+                                    ifelse(df$state == "Vermont" & df$majority_vote_2020 == "Joe Biden", 1,
+                                    ifelse(df$state == "Puerto Rico" & df$majority_vote_2020 == "Joe Biden", 1, 0
+                                           )))))))))))))))))))))))))))))))))))))))))))
+table(df$majority_vote_correct)
+
+# Create knowledge variable
+df$knowledge <- df$voting_age_correct + df$frequency_elections_correct + 
+  df$election_date_correct + df$majority_vote_correct
+
+df$knowledge <- as.numeric(df$knowledge)
+table(df$knowledge)
+
+```
+
+```{r, Calculate alphas and create scales for continuous variables}
+
+# Alphas and Scales 
+
+### Trust in branches of government ### 
+
+# Alpha
+
+# Remove rows with NAs
+df_trust_branches_no_na <- df[complete.cases(df[, c("trust_exec", "trust_legis", "trust_jud")]), ]
+
+# Calculate alpha
+trust_branches_alpa <- alpha(df_trust_branches_no_na[, c("trust_exec", "trust_legis", "trust_jud")])
+print(trust_branches_alpa) # .94
+
+# Create scale
+df$trust_branch <- rowMeans(df[, c("trust_exec", "trust_legis", "trust_jud")], na.rm = TRUE)
+
+# Means and SDs
+round(mean(df$trust_branch, na.rm = TRUE), 2)
+# 33.78
+round(sd(df$trust_branch, na.rm = TRUE), 2)
+# 26.59
+
+### Trust in elections ### 
+
+# Means and SDs
+round(mean(df$trust_elect, na.rm = TRUE), 2)
+# 35.34
+round(sd(df$trust_elect, na.rm = TRUE), 2)
+# 30.21
+
+### General trust measure (aggregate trust in branches of government and trust in elections) ### 
+
+cor.test(df$trust_branch, df$trust_elect) # 0.78
+
+df_trust_agg_no_na <- df[complete.cases(df[, c("trust_exec", "trust_legis", "trust_jud", "trust_elect")]), ]
+
+# Calculate alpha
+df_trust_agg_alpha <- alpha(df_trust_agg_no_na[, c("trust_exec", "trust_legis", "trust_jud", "trust_elect")])
+print(df_trust_agg_alpha) # .93
+
+# Create scale
+df$trust_agg <- rowMeans(df[, c("trust_exec", "trust_legis", "trust_jud", "trust_elect")], na.rm = TRUE)
+
+# Means and SDs
+round(mean(df$trust_agg, na.rm = TRUE), 2)
+# 34.17
+round(sd(df$trust_agg, na.rm = TRUE), 2)
+# 26.27
+
+#### Efficacy ### 
+
+# Remove rows with NAs
+df_efficacy_no_na <- df[complete.cases(df[, c("efficacy_1", "efficacy_2", "efficacy_3")]), ]
+
+# Calculate alpha
+efficacy_alpa <- alpha(df_efficacy_no_na[, c("efficacy_1", "efficacy_2", "efficacy_3")])
+print(efficacy_alpa) # .92
+
+# Create scale
+df$efficacy <- rowMeans(df[, c("efficacy_1", "efficacy_2", "efficacy_3")], na.rm = TRUE)
+
+# Means and SDs
+round(mean(df$efficacy, na.rm = TRUE), 2)
+# 38.48
+round(sd(df$efficacy, na.rm = TRUE), 2)
+# 30.97
+
+#### Norms #### 
+
+# Correlation
+cor.test(df$norms_1, df$norms_2) # 0.83
+
+# Create scale
+df$norms <- rowMeans(df[, c("norms_1", "norms_2")], na.rm = TRUE)
+
+# Means and SDs
+round(mean(df$norms, na.rm = TRUE), 2)
+# 48.38
+round(sd(df$norms, na.rm = TRUE), 2)
+# 31.13
+
+#### Ideology ####
+
+# Correlation
+cor.test(df$ide_eco, df$ide_soc) # 0.80
+
+# Create scale
+df$ide <- rowMeans(df[, c("ide_eco", "ide_soc")], na.rm = TRUE)
+df$ide <- as.numeric(df$ide)
+
+# Means and SDs
+round(mean(df$ide, na.rm = TRUE), 2)
+# 46.11
+round(sd(df$ide, na.rm = TRUE), 2)
+# 25.29
+
+```
+
+```{r, Create categorical variables}
+
+### Recode candidate preference to be binary ###
+
+df <- df %>%
+  mutate(vote_today_bin = ifelse(vote_today == 'Kamala Harris', 0,
+                          ifelse(vote_today == 'Donald Trump', 1, NA)))
+
+table(df$vote_today_bin)
+
+### Binary Party ### 
+
+# Create binary party variable 
+df$party_bin <- ifelse(df$party == "Democrat", 0, 
+                       ifelse(df$party == "Republican", 1, NA))
+
+df$party_bin <- as.factor(df$party_bin)
+table(df$party_bin)
+
+### Gender ##
+
+# Gender four categories
+df <- df %>%
+  mutate(gender_r = case_when(
+    gender == "Woman" ~ "Woman",
+    gender == "Man" ~ "Man",
+    gender == "Non-binary" ~ "Non-binary",
+    gender == "Not listed (please specify)" ~ "Other",
+    
+    # Coded as non-binary - anyone who is non-binary unless they also say other
+    gender == "Man,Non-binary" ~ "Non-binary",
+    gender == "Woman,Non-binary" ~ "Non-binary",
+    gender == "Man,Woman,Non-binary" ~ "Non-binary",
+    
+    # Other
+    gender == "Man,Not listed (please specify)" ~ "Other",
+    gender == "Man,Woman" ~ "Other",
+    gender == "Man,Woman,Non-binary,Not listed (please specify)" ~ "Other",
+    gender == "Man,Woman,Not listed (please specify)" ~ "Other",
+    gender == "Woman,Not listed (please specify)" ~ "Other",
+    TRUE ~ NA_character_
+    ) %>%
+    as.factor())
+
+table(df$gender_r)
+
+# Binary gender
+df$gend_bin <- ifelse(df$gender == "Man", 0, 
+                       ifelse(df$gender == "Woman", 1, NA))
+
+df$gend_bin <- as.numeric(df$gend_bin)
+
+table(df$gend_bin)
+
+# Recode gender to get women = 0 for interactions
+df$gend_bin_r <- ifelse(df$gend_bin == 1,0,1)
+table(df$gend_bin)
+table(df$gend_bin_r)
+
+# Create effects coded binary gender variable
+df$gend_e <- ifelse(df$gender == "Man", -.5, 
+                       ifelse(df$gender == "Woman", .5, NA))
+
+df$gend_e <- as.numeric(df$gend_e) # Effects codes must be numeric
+
+table(df$gend_e)
+
+### Properly recode race ###
+
+# Exclusive for the sake of analyses 
+
+df <- df %>%
+  mutate(race = case_when(
+    raceOLD == "White/Caucasian" ~ "White",
+    raceOLD == "Black/African American" ~ "Black",
+    raceOLD == "Hispanic/Latinx" ~ "Latinx",
+    raceOLD == "Asian/Asian American" ~ "Asian",
+    raceOLD == "Native American/Pacific Islander" ~ "Native",
+    raceOLD == "Middle Eastern (Arab)" ~ "MEA",
+    raceOLD == "Middle Eastern (Non-Arab)" ~ "MEnonA",
+    
+    # Multi-racial categories (recoded as "Multiracial")
+    raceOLD == "White/Caucasian,Hispanic/Latinx" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Black/African American,Hispanic/Latinx" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Asian/Asian American" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Hispanic/Latinx,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Black/African American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "White/Caucasian,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "Hispanic/Latinx,Asian/Asian American" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Black/African American,Hispanic/Latinx,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Asian/Asian American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Black/African American,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Asian/Asian American" ~ "Multiracial",
+    raceOLD == "Asian/Asian American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Black/African American,Asian/Asian American" ~ "Multiracial",
+    raceOLD == "Native American/Pacific Islander,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx,Asian/Asian American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,Asian/Asian American" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Middle Eastern (Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Asian/Asian American,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Asian/Asian American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx,Asian/Asian American,Native American/Pacific Islander,Middle Eastern (Arab),Middle Eastern (Non-Arab),A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Native American/Pacific Islander,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,Middle Eastern (Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,Native American/Pacific Islander,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "Asian/Asian American,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "Asian/Asian American,Middle Eastern (Arab),Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "Black/African American,Asian/Asian American,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "Black/African American,Asian/Asian American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Black/African American,Hispanic/Latinx,Asian/Asian American" ~ "Multiracial",
+    raceOLD == "Black/African American,Hispanic/Latinx,Asian/Asian American,Native American/Pacific Islander" ~ "Multiracial",
+    raceOLD == "Black/African American,Hispanic/Latinx,Asian/Asian American,Native American/Pacific Islander,Middle Eastern (Arab)" ~ "Multiracial",
+    raceOLD == "Black/African American,Middle Eastern (Arab)" ~ "Multiracial",
+    raceOLD == "Black/African American,Native American/Pacific Islander,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "Hispanic/Latinx,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "Middle Eastern (Arab),Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "Native American/Pacific Islander,Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Asian/Asian American,Middle Eastern (Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Asian/Asian American,Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Asian/Asian American,Middle Eastern (Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx,Asian/Asian American" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx,Asian/Asian American,Native American/Pacific Islander,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Hispanic/Latinx,Asian/Asian American,Native American/Pacific Islander,Middle Eastern (Arab),Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Black/African American,Middle Eastern (Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,Middle Eastern (Non-Arab),A different identity (please specify)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Hispanic/Latinx,Native American/Pacific Islander,Middle Eastern (Non-Arab)" ~ "Multiracial",
+    raceOLD == "White/Caucasian,Native American/Pacific Islander,A different identity (please specify)" ~ "Multiracial",
+    
+    # "Other" categories (recoded as "Other")
+    raceOLD == "A different identity (please specify)" ~ "Other", 
+    
+    # Fix open responses from "a different identity" 
+      ResponseId == "R_1mVkxsuvZuiuoYI" ~ "Asian",
+      ResponseId == "R_50vDQOCwUMefRn2" ~ NA_character_,
+      ResponseId == "R_3HObUAwO3mTyRId" ~ "Multiracial",
+      ResponseId == "R_6gOcMCuiwEvGRoF" ~ NA_character_,
+      ResponseId == "R_5vqpVUNNX0AwP17" ~ "Latinx",
+      ResponseId == "R_3GE2KKCz3aLpV5Y" ~ "Asian",
+      ResponseId == "R_1I4nTTR6Plk3qPp" ~ "Multiracial",
+      ResponseId == "R_5Va6EFTfEOKdlxO" ~ NA_character_,
+      ResponseId == "R_3PLzgjGeChWCdHz" ~ "Native",
+      ResponseId == "R_6dV8Hba2eIlk7w5" ~ "Multiracial",
+      ResponseId == "R_11dtWKPmsVpZFd2" ~ "Multiracial",
+      ResponseId == "R_7n0aWhgZZvIX3PL" ~ NA_character_,
+      ResponseId == "R_3WU4xFnA8EJ6Ies" ~ "Multiracial",
+      ResponseId == "R_6e2Px4gXvF471af" ~ "Multiracial",
+      ResponseId == "R_5duPAwP4ksf1iCm" ~ NA_character_,
+      ResponseId == "R_12XbzGM4zzWzT1F" ~ "Multiracial",
+      ResponseId == "R_3DheVipL8Eckb38" ~ "White",
+      ResponseId == "R_5o8BzqPwjLWOqpH" ~ "Asian",
+      ResponseId == "R_7Hib0wUxKL9ThLG" ~ "Latinx",
+      ResponseId == "R_6psWwnwYNT6fkcm" ~ NA_character_,
+      ResponseId == "R_1gux5Yi45mQ05y2" ~ "White",
+      ResponseId == "R_6JrZvio5NZaL7JQ" ~ NA_character_,
+      ResponseId == "R_1Vloe1WDuA7sDGG" ~ "Multiracial",
+      ResponseId == "R_1smfIZt1SY4HPcU" ~ "Multiracial",
+      ResponseId == "R_7R3QZs4ZAQiAr09" ~ NA_character_,
+      ResponseId == "R_6HjYa48dddWYZlg" ~ "Multiracial",
+      ResponseId == "R_6FqETJ71DLGMuqp" ~ "Multiracial",
+      ResponseId == "R_7LqGgd4roymsNxf" ~ "Multiracial",
+      ResponseId == "R_37ancpGKE0Q4AL9" ~ NA_character_,
+      ResponseId == "R_7I7d1LkkE7NkobC" ~ "Multiracial",
+      ResponseId == "R_5tDSrZq88rJJiIP" ~ "Multiracial",
+      ResponseId == "R_3nHPpTfOZ5S11rb" ~ "Multiracial",
+      ResponseId == "R_2q2EI99nsJCH9nG" ~ "White",
+      ResponseId == "R_3hGFURmry23DcM9" ~ NA_character_,
+      ResponseId == "R_1pM1zMlgp5Cgxut" ~ "Native",
+      ResponseId == "R_7VOE1PY0rVvAILf" ~ "Multiracial",
+      ResponseId == "R_1Dymy7QWAKaynux" ~ "Multiracial",
+      ResponseId == "R_7PttsJj6NNxAXBV" ~ "Latinx",
+      ResponseId == "R_31aQ6A4aaSqP8Yx" ~ "Multiracial",
+      ResponseId == "R_7sXO1dSb2dphTfs" ~ "Multiracial",
+      ResponseId == "R_1U8qLoMYFT2IoFz" ~ "Multiracial",
+      ResponseId == "R_6vIPiryElcMZz4R" ~ "Multiracial",
+      ResponseId == "R_1OIakchApYHhsqk" ~ "Multiracial",
+      ResponseId == "R_3349wFXk4RWn1Lq" ~ "Latinx",
+      ResponseId == "R_3JQ87ul1uDgYGEE" ~ NA_character_,
+      ResponseId == "R_7nTLyrVN5VGXtuj" ~ "Native",
+      ResponseId == "R_55GDXt8l4KlhgVp" ~ "Multiracial",
+      ResponseId == "R_6DT58vZaiRXo37G" ~ "Multiracial",
+      ResponseId == "R_5DNqg32kNxivvbo" ~ NA_character_,
+      ResponseId == "R_5PP1uHfVOaQaN8J" ~ "Multiracial",
+      ResponseId == "R_5P4XM7IIqAIqzyg" ~ "Multiracial",
+      ResponseId == "R_5p6hmsaxQIMbOeK" ~ NA_character_,
+      ResponseId == "R_1uzvCZGWf8KNyF3" ~ "Multiracial",
+      ResponseId == "R_5LklyzKSfgqR9UP" ~ "Latinx",
+      ResponseId == "R_5NvVDyTccJEvfCd" ~ "Multiracial",
+      ResponseId == "R_36bTVlS0TWQUvyx" ~ "Multiracial",
+      ResponseId == "R_1vzz1cyaDm4koY9" ~ "Multiracial",
+      ResponseId == "R_6CIxsGa6UCm2gFY" ~ "Multiracial",
+      ResponseId == "R_7lhHgwNcjWltwjN" ~ "Multiracial",
+      ResponseId == "R_6BGSgZWrEXY06eR" ~ "Multiracial",
+      ResponseId == "R_7468VoIHl3irued" ~ "Multiracial",
+      ResponseId == "R_3l3HvwJwcYy7OhM" ~ "Native",
+      ResponseId == "R_6k05sOrY11AbfSC" ~ "Multiracial",
+      ResponseId == "R_6QVHI3WXLfHbQRU" ~ "Multiracial",
+      ResponseId == "R_51afeGR2r562UHL" ~ "Multiracial",
+      ResponseId == "R_5UeFbDKSa8VgvEk" ~ "White"
+    ),
+    race = factor(
+      race,
+      levels = c("White", "Black", "Latinx", "Asian", "MEA", "MEnonA", "Native", "Multiracial", "Other")
+    )
+  )
+
+table(df$race)
+
+# Look at NAs
+race_nas <- df %>%
+  filter(is.na(race)) %>%
+  dplyr::select(raceOLD, race_8_TEXT)
+  
+race_nas # All NAs didn't report race
+
+# Combine ME since both less than .5% of sample and models not estimating
+df <- df %>%
+  mutate(race_me_combined = case_when(
+    race == "White" ~ "White",
+    race == "Black" ~ "Black",
+    race == "Latinx" ~ "Latinx",
+    race == "Asian" ~ "Asian",
+    race == "Native" ~ "Native",
+    race == "Multiracial" ~ "Multiracial",
+    race %in% c("MEA", "MEnonA") ~ "ME",  
+    race == "Other" ~ "Other",
+    TRUE ~ NA_character_
+    ) %>%
+    as.factor())
+
+df$race_me_combined <- factor(df$race_me_combined, 
+                                     levels = c("White", "Asian", "Black", "Latinx", "ME", "Native", "Multiracial", "Other"))
+
+table(df$race_me_combined) 
+
+# Simple effects code race variable manually (use combined ME for sake of model convergence)
+
+# Race list
+race_loop <- as.factor(c("White", "Asian", "Black", "Latinx", "ME", "Native", "Multiracial", "Other"))
+
+# Loop through to create effects coding
+for (race_me_combined in race_loop) {
+  effect_var <- paste0(race_me_combined, "_E")
+  df[[effect_var]] <- ifelse(df$race_me_combined == race_me_combined, 7/8, -1/8)
+  mean_val <- mean(df[[effect_var]], na.rm = TRUE)
+  cat(race_me_combined, "Effect:", mean_val, "\n")
+}
+
+# Binary race (white versus non-white)
+df <- df %>%
+  mutate(race_bin = case_when(
+    race == "White" ~ "0",
+    race == "Black" ~ "1",
+    race == "Latinx" ~ "1",
+    race == "Asian" ~ "1",
+    race == "Native" ~ "1",
+    race == "Multiracial" ~ "1",
+    race == "MEA" ~ "1",  
+    race == "MEnonA" ~ "1",
+    race == "Other" ~ "1",
+    TRUE ~ NA_character_
+    ) %>%
+    as.factor())
+
+# Reverse score
+df$race_bin_r <- ifelse(df$race_bin == 0,1,0)
+
+table(df$race_bin)
+table(df$race_bin_r)
+
+# Effects code binary race
+
+df$race_bin_e <- ifelse(df$race_bin == "0", -.5, 
+                       ifelse(df$race_bin == "1", .5, NA))
+
+df$race_bin_e <- as.numeric(df$race_bin_e)
+
+table(df$race_bin_e)
+
+### Dummmy and simple effects code condition ### 
+
+# Condition list
+condition_loop <- as.factor(c("ControlCondition", "DistrustSalience", "CorrectingMisperceptions", "DynamicNorms", "EscalatingCommitment", "ImplementationIntentions","InterdependentConstrual", "MoralReasons", "PersonalImportance", "SelfGeneratedNorms", "SystemJustification"))
+
+# Loop through to create dummy coding
+for (condition in condition_loop) {
+  dummy_var <- paste0(condition, "_DC")
+  df[[dummy_var]] <- ifelse(df$condition == condition, 1, 0)
+  mean_val <- mean(df[[dummy_var]], na.rm = TRUE)
+  cat(condition, "Dummy:", mean_val, "\n")
+}
+
+# Loop through to create effects coding
+for (condition in condition_loop) {
+  effect_var <- paste0(condition, "_E")
+  df[[effect_var]] <- ifelse(df$condition == condition, 10/11, -1/11)
+  mean_val <- mean(df[[effect_var]], na.rm = TRUE)
+  cat(condition, "Effect:", mean_val, "\n")
+}
+
+
+# Create region variable
+
+Northeast <- c('Connecticut', 'Maine', 'Massachusetts', 'Rhode Island',
+               'Vermont', 'New Jersey', 'New York', 'Pennsylvania')
+
+Midwest <- c('Illinois', 'Indiana', 'Michigan', 'Ohio', 'Wisconsin',
+             'Iowa', 'Kansas', 'Minnesota', 'Missouri', 'Nebraska')
+
+South <- c('Delaware', 'District of Columbia', 'Florida', 'Georgia', 'Maryland', 'North Carolina', 
+           'South Carolina', 'Virginia', 'West Virginia', 'Alabama', 'Kentucky', 'Tennessee',
+           'Louisiana', 'Oklahoma')
+
+West <- c('Arizona', 'Colorado', 'Idaho', 'Nevada', 'New Mexico', 'Utah', 'California', 'Hawaii', 'Oregon', 'Washington')
+
+df$region <- ifelse(df$state %in% Northeast, 'Northeast', 
+             ifelse(df$state %in% Midwest, 'Midwest',
+             ifelse(df$state %in% South, 'South',
+             ifelse(df$state %in% West, 'West', NA
+                   ))))
+
+table(df$region)
+
+# Effects code region variable 
+
+region_loop <- as.factor(c("Northeast", "Midwest", "South", "West"))
+
+# Loop through to create effects coding
+for (region in region_loop) {
+  effect_var <- paste0(region, "_E")
+  df[[effect_var]] <- ifelse(df$region == region, 4/5, -1/5)
+  mean_val <- mean(df[[effect_var]], na.rm = TRUE)
+  cat(region, "Effect:", mean_val, "\n")
+}
+
+# Create swing state variable
+
+df$swing <- ifelse(df$state == 'Arizona', 1,
+            ifelse(df$state == 'Georgia', 1,
+            ifelse(df$state == 'Michigan', 1,
+            ifelse(df$state == 'Nevada', 1,
+            ifelse(df$state == 'North Carolina', 1,
+            ifelse(df$state == 'Pennsylvania', 1,
+            ifelse(df$state == 'Wisconsin', 1, 0
+                   )))))))
+
+# Reverse-coded
+df$swing_r <- ifelse(df$state == 'Arizona', 0,
+            ifelse(df$state == 'Georgia', 0,
+            ifelse(df$state == 'Michigan', 0,
+            ifelse(df$state == 'Nevada', 0,
+            ifelse(df$state == 'North Carolina', 0,
+            ifelse(df$state == 'Pennsylvania', 0,
+            ifelse(df$state == 'Wisconsin', 0, 1
+                   )))))))
+table(df$swing)
+table(df$swing_r)
+
+# Effects coded 
+df$swing_E <- ifelse(df$state == 'Arizona', .5,
+            ifelse(df$state == 'Georgia', .5,
+            ifelse(df$state == 'Michigan', .5,
+            ifelse(df$state == 'Nevada', .5,
+            ifelse(df$state == 'North Carolina', .5,
+            ifelse(df$state == 'Pennsylvania', .5,
+            ifelse(df$state == 'Wisconsin', .5, -.5
+                   )))))))
+table(df$swing_E)
+
+# Create variable to use to test all legs
+
+# Control vs intervention (binary)
+df$condition_binary <- ifelse(df$condition == "ControlCondition", "ControlCondition", "Intervention")
+df$condition_binary <- factor(df$condition_binary, levels = c("ControlCondition", "Intervention"))
+
+zdf$condition_binary <- ifelse(zdf$condition == "ControlCondition", "ControlCondition", "Intervention")
+zdf$condition_binary <- factor(zdf$condition_binary, levels = c("ControlCondition", "Intervention"))
+
+```
+
+```{r, Center predictors}
+
+### Age ###
+
+mean(df$age, na.rm = TRUE) 
+# 39.26628
+sd(df$age, na.rm = TRUE) 
+# 13.35923
+
+# Center age
+df$age_c <- scale(df$age, center = TRUE, scale = FALSE)
+mean(df$age_c, na.rm = TRUE) 
+
+# High and low age
+df$age_low <- df$age_c - (-13.35923)
+df$age_high <- df$age_c - (13.35923)
+
+
+### Ideology ###
+
+mean(df$ide, na.rm = TRUE)
+# 46.10854
+sd(df$ide, na.rm = TRUE)
+# 25.29253
+
+# Make moderate the mid point 
+df$ide_c <- df$ide - 50
+mean(df$ide_c, na.rm = TRUE)
+# -3.891463
+
+# Liberal and conservative for simple effects
+df$ide_low <- df$ide_c - (-30)
+df$ide_high <- df$ide_c - (30)
+
+### Income ###
+
+mean(df$income, na.rm = TRUE)
+# 1.930018
+sd(df$income, na.rm = TRUE)
+# 1.169751
+
+# Center income
+df$income_c <- scale(df$income, center = TRUE, scale = FALSE)
+mean(df$income_c, na.rm = TRUE) 
+
+# High and low income
+df$income_low <- df$income_c - (-1.169751)
+df$income_high <- df$income_c - (1.169751)
+
+### Education ###
+
+mean(df$edu, na.rm = TRUE)
+# 2.513537
+sd(df$edu, na.rm = TRUE)
+# 1.16099
+
+# Center education
+df$edu_c <- scale(df$edu, center = TRUE, scale = FALSE)
+mean(df$edu_c, na.rm = TRUE) 
+
+# High and low education
+df$edu_low <- df$edu_c - (-1.16099)
+df$edu_high <- df$edu_c - (1.16099)
+
+### Pre-intention ###
+
+mean(df$pre_intention, na.rm = TRUE)
+# 24.72168
+sd(df$pre_intention, na.rm = TRUE)
+# 29.50063
+
+# Center pre-intention
+df$pre_intention_c <- scale(df$pre_intention, center = TRUE, scale = FALSE)
+mean(df$pre_intention_c, na.rm = TRUE) 
+
+df$pre_intention_low <- df$pre_intention_c - (-29.50063)
+df$pre_intention_high <- df$pre_intention_c - (29.50063)
+
+### Interest ###
+
+mean(df$interest, na.rm = TRUE)
+# 30.92896
+sd(df$interest, na.rm = TRUE)
+# 28.45163
+
+# Center interest
+df$interest_c <- scale(df$interest, center = TRUE, scale = FALSE)
+mean(df$interest_c, na.rm = TRUE) 
+
+# High and low interest
+df$interest_low <- df$interest_c - (-28.45163)
+df$interest_high <- df$interest_c - (28.45163)
+
+### Knowledge ###
+
+mean(df$knowledge, na.rm = TRUE)
+# 3.133065
+sd(df$knowledge, na.rm = TRUE)
+# 0.8227881
+
+# Center knowledge
+df$knowledge_c <- scale(df$knowledge, center = TRUE, scale = FALSE)
+mean(df$knowledge_c, na.rm = TRUE) 
+
+# High and low knowledge
+df$knowledge_low <- df$knowledge_c - (-0.8227881)
+df$knowledge_high <- df$knowledge_c - (0.8227881)
+
+### Trust in branches of government ###
+
+mean(df$trust_branch, na.rm = TRUE)
+# 33.77749
+sd(df$trust_branch, na.rm = TRUE)
+# 26.58892
+
+# Center trust in branches of government
+df$trust_branch_c <- scale(df$trust_branch, center = TRUE, scale = FALSE)
+mean(df$trust_branch_c, na.rm = TRUE) 
+
+# High and low trust in branches of government
+df$trust_branch_low <- df$trust_branch_c - (-26.58892)
+df$trust_branch_high <- df$trust_branch_c - (26.58892)
+
+### Trust in fairness of elections ###
+
+mean(df$trust_elect, na.rm = TRUE)
+# 35.33549
+sd(df$trust_elect, na.rm = TRUE)
+# 30.20941
+
+# Center trust in fairness of elections
+df$trust_elect_c <- scale(df$trust_elect, center = TRUE, scale = FALSE)
+mean(df$trust_elect_c, na.rm = TRUE) 
+
+# High and low trust in branches of government
+df$trust_elect_low <- df$trust_elect_c - (-30.20941)
+df$trust_elect_high <- df$trust_elect_c - (30.20941)
+
+### General trust measure ###
+
+mean(df$trust_agg, na.rm = TRUE)
+# 34.16737
+sd(df$trust_agg, na.rm = TRUE)
+# 26.26834
+
+# Center aggregate trust
+df$trust_agg_c <- scale(df$trust_agg, center = TRUE, scale = FALSE)
+mean(df$trust_agg_c, na.rm = TRUE) 
+
+# High and low trust in branches of government
+df$trust_agg_low <- df$trust_agg_c - (-26.26834)
+df$trust_agg_high <- df$trust_agg_c - (26.26834)
+
+### Efficacy ###
+
+mean(df$efficacy, na.rm = TRUE)
+# 38.48013
+sd(df$efficacy, na.rm = TRUE)
+# 30.97211
+
+# Center efficacy
+df$efficacy_c <- scale(df$efficacy, center = TRUE, scale = FALSE)
+mean(df$efficacy_c, na.rm = TRUE) 
+
+# High and low efficacy
+df$efficacy_low <- df$efficacy_c - (-30.97211)
+df$efficacy_high <- df$efficacy_c - (30.97211)
+
+### Norms ###
+
+mean(df$norms, na.rm = TRUE)
+# 48.37706
+sd(df$norms, na.rm = TRUE)
+# 31.12914
+
+# Center norms
+df$norms_c <- scale(df$norms, center = TRUE, scale = FALSE)
+mean(df$norms_c, na.rm = TRUE) 
+
+# High and low efficacy
+df$norms_low <- df$norms_c - (-31.12914)
+df$norms_high <- df$norms_c - (31.12914)
+
+```
+
+```{r, COVI measure}
+
+# Add cost of voting scores per state to data set
+
+covi <- read.xlsx('COVI 2024.xlsx') # Taken from https://costofvotingindex.com/
+
+df <- df %>%
+  left_join(covi, by = "state")
+
+# Center 
+
+mean(df$FinalCOVI, na.rm = TRUE)
+# -0.3664967
+sd(df$FinalCOVI, na.rm = TRUE)
+# 1.321302
+
+# Center COVI score
+df$COVI_c <- scale(df$FinalCOVI, center = TRUE, scale = FALSE)
+mean(df$COVI_c, na.rm = TRUE) 
+
+# Low and high COVI
+df$COVI_low <- df$COVI_c - (-1.321302)
+df$COVI_high <- df$COVI_c - (1.321302)
+
+```
+
+```{r, Standardize variables}
+
+# Standardize continuous variables (do not center ideology)
+dvs_stand <- df[, c("age_c", "income_c", "edu_c", "pre_intention_c", "interest_c", 
+                    "knowledge_c", "trust_branch_c", "trust_elect_c", "efficacy_c", 
+                    "trust_agg_c", "norms_c", "voteInt", "ide_c", "COVI_c", "linkClicked_n", 
+                    "register_n", "vote_n", "days_between")]  %>%
+  mutate(
+    across(c("age_c", "income_c", "edu_c", "pre_intention_c", "interest_c", 
+             "knowledge_c", "trust_branch_c", "trust_elect_c", "efficacy_c", 
+             "trust_agg_c", "norms_c", "COVI_c", "voteInt", "linkClicked_n", 
+             "register_n", "vote_n", "days_between"), ~ scale(.x, center = TRUE, scale = TRUE)[, 1])
+  )
+dvs_stand
+
+# Combine with non-standardized variables that we need to keep
+zdf <- cbind(df[, c("ResponseId", "condition", "state", "gend_e", "gend_bin", "gend_bin_r", "ide_c", "party", "party_bin", "political_lean", 
+                             "race_bin_e", "race_bin", "race_bin_r", "White_E", "Black_E", "Latinx_E", "Asian_E", "ME_E", 
+                             "Native_E", "Multiracial_E", "Other_E", "ControlCondition_E", "DistrustSalience_E", 
+                             "CorrectingMisperceptions_E", "DynamicNorms_E", "EscalatingCommitment_E", 
+                             "ImplementationIntentions_E", "InterdependentConstrual_E", "MoralReasons_E", 
+                             "PersonalImportance_E", "SelfGeneratedNorms_E", "SystemJustification_E", 
+                             "DistrustSalience_DC", "CorrectingMisperceptions_DC", "DynamicNorms_DC", 
+                             "EscalatingCommitment_DC", "ImplementationIntentions_DC", "InterdependentConstrual_DC", 
+                             "MoralReasons_DC", "PersonalImportance_DC", "SelfGeneratedNorms_DC", 
+                             "SystemJustification_DC", "Midwest_E", "Northeast_E", "South_E", "West_E", 'swing_E', 
+                              'swing', 'swing_r', "vote_today", "linkClicked", "register", "vote"), drop = TRUE], 
+  as.data.frame(dvs_stand)
+)
+
+# Standardize ideology (but do not center)
+zdf$ide_c <- zdf$ide_c/(sd(zdf$ide_c, na.rm = TRUE))
+sd(zdf$ide_c, na.rm = T)
+
+sd(df$ide_c, na.rm = T) # 25.29253
+ 
+# Standardized low and high ideology
+zdf$ide_low <- zdf$ide_c - (-1.186121) # Equal to 30 points in unstandardized units
+zdf$ide_high <- zdf$ide_c - (1.186121) # Equal to 30 points in unstandardized units
+
+# Standardized high and low income
+zdf$income_low <- zdf$income_c - (-1)
+zdf$income_high <- zdf$income_c - (1)
+
+# Standardized high and low education
+zdf$edu_low <- zdf$edu_c - (-1)
+zdf$edu_high <- zdf$edu_c - (1)
+
+# Standardized high and low age
+zdf$age_low <- zdf$age_c - (-1)
+zdf$age_high <- zdf$age_c - (1)
+
+# Standardized high and low interest
+zdf$interest_low <- zdf$interest_c - (-1)
+zdf$interest_high <- zdf$interest_c - (1)
+
+# Standardized high and low political knowledge
+
+zdf$knowledge_low <- zdf$knowledge_c - (-1)
+zdf$knowledge_high <- zdf$knowledge_c - (1)
+
+# Standardized high and low trust in branches of government
+zdf$trust_branch_low <- zdf$trust_branch_c - (-1)
+zdf$trust_branch_high <- zdf$trust_branch_c - (1)
+
+# Standardized high and low trust in fairness of elections
+zdf$trust_elect_low <- zdf$trust_elect_c - (-1)
+zdf$trust_elect_high <- zdf$trust_elect_c - (1)
+
+# Standardized high and low generalized trust
+zdf$trust_agg_low <- zdf$trust_agg_c - (-1)
+zdf$trust_agg_high <- zdf$trust_agg_c - (1)
+
+# Standardized high and low efficacy
+zdf$efficacy_low <- zdf$efficacy_c - (-1)
+
+zdf$efficacy_high <- zdf$efficacy_c - (1)
+
+# Standardized high and low norms
+zdf$norms_low <- zdf$norms_c - (-1)
+zdf$norms_high <- zdf$norms_c - (1)
+
+# High and low COVI
+zdf$COVI_low <- zdf$COVI_c - (-1)
+zdf$COVI_high <- zdf$COVI_c - (1)
+
+# High and low pre-intervention intention to register
+zdf$pre_intention_low <- zdf$pre_intention_c - (-1)
+zdf$pre_intention_high <- zdf$pre_intention_c - (1)
+
+head(zdf)
+
+```
+
+# Export
+
+```{r, Export}
+
+# Export clean data set
+
+write.csv(df, file = "Voter_Reg_STRICT.csv")
+write.csv(zdf, file = "Voter_Reg_STRICT_STANDARDIZED.csv")
+
+```
