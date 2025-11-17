@@ -1,0 +1,247 @@
+---
+title: "VR Analyses - Supplementary Analyses"
+author: "Katherine Mason"
+date: "2025-08-31"
+output: html_document
+---
+
+###################################################### Prepare Data
+
+```{r, Load Packages}
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(psych)
+library(ltm)
+library(Hmisc)
+library(reticulate)
+library(nlme)
+library(ordinal)
+library(carData)
+library(car)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(clubSandwich)
+library(sandwich)
+library(CR2)
+library(lsmeans)
+library(stats)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(glmmTMB) 
+library(MASS)
+library(broom) 
+library(knitr)
+library(tools)
+library(sjstats)
+library(effectsize)
+library(pscl)
+library(logistf)
+library(lavaan)
+library(kableExtra)
+library(boot)
+library(margins)
+library(purrr)
+library(xtable)
+library(gt) 
+library(weights)
+library(mediation)
+library(QuantPsyc)
+library(lm.beta)
+library(parameters)
+library(esc)
+library(corrplot)
+library(ivreg)
+
+```
+
+```{r, Load and Prepare Data}
+
+df <- read.csv("Voter_Reg_STRICT.csv")
+head(df)
+
+nrow(df)
+
+zdf <- read.csv("Voter_Reg_STRICT_STANDARDIZED.csv")
+head(zdf)
+
+nrow(zdf)
+
+## Prepare variables ##
+
+# Set reference level as the control conditon
+df$condition <- relevel(as.factor(df$condition), ref = "ControlCondition")
+
+zdf$condition <- relevel(as.factor(zdf$condition), ref = "ControlCondition")
+
+# Make sure link click, register, and vote variables are factors for regressions
+df$linkClicked <- as.factor(df$linkClicked)
+df$register <- as.factor(df$register)
+df$vote <- as.factor(df$vote)
+
+###### 
+
+# Define conditions targeting registration and voting
+registration_conditions <- c("DistrustSalience", "CorrectingMisperceptions", "DynamicNorms",
+                             "ImplementationIntentions", "InterdependentConstrual",
+                             "SystemJustification")
+
+voting_conditions <- c("EscalatingCommitment", "ImplementationIntentions",
+                       "InterdependentConstrual", "MoralReasons", "PersonalImportance",
+                       "SelfGeneratedNorms", "SystemJustification")
+
+# Create dummy variables
+df$reg_dc <- as.integer(df$condition %in% registration_conditions)
+df$vote_dc <- as.integer(df$condition %in% voting_conditions)
+
+# Create categorical variable for registration vs. voting vs. both (compared to control)
+df$reg_vs_vote <- factor(ifelse(df$reg_dc == 1 & df$vote_dc == 0, "Registration",
+                         ifelse(df$reg_dc == 0 & df$vote_dc == 1, "Voting",
+                         ifelse(df$reg_dc == 1 & df$vote_dc == 1, "Both", "Control"))))
+table(df$reg_dc)
+table(df$vote_dc)
+table(df$reg_vs_vote)
+
+# Create dummy variables standardized data set
+zdf$reg_dc <- as.integer(zdf$condition %in% registration_conditions)
+zdf$vote_dc <- as.integer(zdf$condition %in% voting_conditions)
+
+# Create categorical variable for registration vs. voting
+zdf$reg_vs_vote <- factor(ifelse(zdf$reg_dc == 1 & zdf$vote_dc == 0, "Registration",
+                         ifelse(zdf$reg_dc == 0 & zdf$vote_dc == 1, "Voting",
+                         ifelse(zdf$reg_dc == 1 & zdf$vote_dc == 1, "Both", "Control"))))
+table(zdf$reg_dc)
+table(zdf$vote_dc)
+table(zdf$reg_vs_vote)
+
+# Re-level so that control is the reference condition
+df$reg_vs_vote <- factor(df$reg_vs_vote, levels = c("Control", "Registration", "Voting", "Both"))
+zdf$reg_vs_vote <- factor(zdf$reg_vs_vote, levels = c("Control", "Registration", "Voting", "Both"))
+
+```
+
+################################################## Supplementary Analyses
+
+###### Did targetting registration vs. voting influence interventions efficacy?
+
+```{r, Registration vs Voting vs Both - Link Clicks}
+
+# Fit the model
+Link_RegvsVote <- lm(linkClicked_n ~ reg_vs_vote, data = df)
+summary(Link_RegvsVote)
+
+Link_RegvsVote_robust <- coeftest(Link_RegvsVote, vcov = vcovHC(Link_RegvsVote, type = "HC3"))
+Link_RegvsVote_robust 
+
+Link_RegvsVote_Stand <- lm(linkClicked_n ~ reg_vs_vote, data = zdf)
+summary(Link_RegvsVote_Stand)
+
+# Use two tailed lm function to format
+Link_RegvsVote_Results <- format_lm_bin_output_twotailed(Link_RegvsVote_robust, Link_RegvsVote_Stand)
+
+# Outputs:
+Link_RegvsVote_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Link_RegvsVote_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+# Test whether there are differences between the coefficients in the model
+
+# Registration versus voting
+linearHypothesis(Link_RegvsVote, "reg_vs_voteRegistration = reg_vs_voteVoting", vcov = vcovHC(Link_RegvsVote, type = "HC3"))
+
+# Registration versus both
+linearHypothesis(Link_RegvsVote, "reg_vs_voteRegistration = reg_vs_voteBoth", vcov = vcovHC(Link_RegvsVote, type = "HC3"))
+
+# Voting versus both
+linearHypothesis(Link_RegvsVote, "reg_vs_voteVoting = reg_vs_voteBoth", vcov = vcovHC(Link_RegvsVote, type = "HC3"))
+
+```
+
+```{r, Registration vs Voting vs Both Voting - Intentions}
+
+# Fit the model
+Intentions_RegvsVote <- lm(voteInt ~ reg_vs_vote, data = df)
+summary(Intentions_RegvsVote)
+
+Intentions_RegvsVote_robust <- coeftest(Intentions_RegvsVote, vcov = vcovHC(Intentions_RegvsVote, type = "HC3"))
+Intentions_RegvsVote_robust 
+
+Intentions_RegvsVote_Stand <- lm(voteInt ~ reg_vs_vote, data = zdf)
+summary(Intentions_RegvsVote_Stand)
+
+# Use two tailed lm function to format
+Intentions_RegvsVote_Results <- format_lm_output_twotailed(Intentions_RegvsVote_robust, Intentions_RegvsVote_Stand)
+
+# Outputs:
+Intentions_RegvsVote_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Intentions_RegvsVote_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+# Test whether there are differences between the coefficients in the model
+
+# Registration versus voting
+linearHypothesis(Intentions_RegvsVote, "reg_vs_voteRegistration = reg_vs_voteVoting", vcov = vcovHC(Intentions_RegvsVote, type = "HC3"))
+
+# Registration versus both
+linearHypothesis(Intentions_RegvsVote, "reg_vs_voteRegistration = reg_vs_voteBoth", vcov = vcovHC(Intentions_RegvsVote, type = "HC3"))
+
+# Voting versus both
+linearHypothesis(Intentions_RegvsVote, "reg_vs_voteVoting = reg_vs_voteBoth", vcov = vcovHC(Intentions_RegvsVote, type = "HC3"))
+
+```
+
+
+###### Candidate Preference
+
+```{r, Candidate Preference With Covariates Two-Tailed}
+
+# Filter dataset to include only those who would vote
+df_candidate <- df %>% 
+  mutate(vote_today = as.character(vote_today)) %>%
+  filter(vote_today %in% c("Donald Trump", "Kamala Harris"))
+
+nrow(df_candidate) # 8384
+
+zdf_candidate <- zdf %>% 
+  mutate(vote_today = as.character(vote_today)) %>%
+  filter(vote_today %in% c("Donald Trump", "Kamala Harris"))
+
+nrow(df_candidate) # 8384
+
+# Make 0 and 1
+df_candidate$vote_today_num <- ifelse(df_candidate$vote_today == "Kamala Harris", 0, 1)
+
+# Scale for standardized 
+zdf_candidate$vote_today_num <- ifelse(zdf_candidate$vote_today == "Kamala Harris", 0, 1) %>% 
+  scale()
+
+# Make sure the reference level is set to the control conditon
+df_candidate$condition <- relevel(as.factor(df_candidate$condition), ref = "ControlCondition")
+table(df_candidate$condition)
+
+zdf_candidate$condition <- relevel(as.factor(zdf_candidate$condition), ref = "ControlCondition")
+table(zdf_candidate$condition)
+
+# Fit the model
+Preference_Model_1 <- lm(vote_today_num ~ condition, data = df_candidate)
+summary(Preference_Model_1)
+
+Preference_Model_1_robust <- coeftest(Preference_Model_1, vcov = vcovHC(Preference_Model_1, type = "HC3"))
+Preference_Model_1_robust
+
+Preference_Model_1_Stand <- lm(vote_today_num ~ condition, data = zdf_candidate)
+summary(Preference_Model_1_Stand)
+
+# Use two tailed lm function to format
+Preference_Model_1_Results <- format_lm_output_twotailed(Preference_Model_1_robust, Preference_Model_1_Stand)
+
+# Outputs:
+Preference_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Preference_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```

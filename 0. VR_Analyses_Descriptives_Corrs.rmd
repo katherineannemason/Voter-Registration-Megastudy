@@ -1,0 +1,1097 @@
+---
+title: "Voter Registration Frequencies and Correlations"
+author: "Katherine Mason"
+format: html
+editor: source
+---
+
+#################################################### Prepare Data #################################################### 
+
+```{r, Load Packages}
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(psych)
+library(ltm)
+library(Hmisc)
+library(reticulate)
+library(nlme)
+library(ordinal)
+library(carData)
+library(car)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(clubSandwich)
+library(sandwich)
+library(CR2)
+library(lsmeans)
+library(stats)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(glmmTMB) 
+library(MASS)
+library(broom) 
+library(knitr)
+library(tools)
+library(sjstats)
+library(effectsize)
+library(pscl)
+library(logistf)
+library(lavaan)
+library(kableExtra)
+library(boot)
+library(margins)
+library(purrr)
+library(xtable)
+library(gt) 
+library(weights)
+library(mediation)
+library(QuantPsyc)
+library(lm.beta)
+library(parameters)
+library(esc)
+library(corrplot)
+library(ivreg)
+
+```
+
+```{r, Load and Prepare Data}
+
+df <- read.csv("Voter_Reg_STRICT.csv")
+head(df)
+
+nrow(df)
+
+zdf <- read.csv("Voter_Reg_STRICT_STANDARDIZED.csv")
+head(zdf)
+
+nrow(zdf)
+
+## Prepare variables ##
+
+# Set reference level as the control conditon
+df$condition <- relevel(as.factor(df$condition), ref = "ControlCondition")
+
+zdf$condition <- relevel(as.factor(zdf$condition), ref = "ControlCondition")
+
+# Make sure link click, register, and vote variables are factors for regressions
+df$linkClicked <- as.factor(df$linkClicked)
+df$register <- as.factor(df$register)
+df$vote <- as.factor(df$vote)
+
+```
+
+# Covariate Balance Checks
+
+```{r, Balance checks}
+
+# Continuous variables adjusted in models
+
+# Age 
+summary(aov(age ~ condition, data = df))
+
+# Education
+summary(aov(edu ~ condition, data = df))
+
+# Income
+summary(aov(income ~ condition, data = df))
+
+# Intention to register
+summary(aov(pre_intention ~ condition, data = df))
+
+# Categorical variables (gender and race)
+chisq.test(table(df$race, df$condition))
+chisq.test(table(df$gend_bin, df$condition))
+
+```
+
+# Frequencies and Means
+
+```{r, DVs Means and alphas}
+
+# Alphas and Scales 
+
+### Trust in branches of government ### 
+
+# Alpha
+
+# Remove rows with NAs
+df_trust_branches_no_na <- df[complete.cases(df[, c("trust_exec", "trust_legis", "trust_jud")]), ]
+
+# Calculate alpha
+trust_branches_alpa <- alpha(df_trust_branches_no_na[, c("trust_exec", "trust_legis", "trust_jud")])
+print(trust_branches_alpa) # .94
+
+# Means and SDs
+round(mean(df$trust_branch, na.rm = TRUE), 2)
+# 33.78
+round(sd(df$trust_branch, na.rm = TRUE), 2)
+# 26.59
+
+### Trust in elections ### 
+
+# Means and SDs
+round(mean(df$trust_elect, na.rm = TRUE), 2)
+# 35.34
+round(sd(df$trust_elect, na.rm = TRUE), 2)
+# 30.21
+
+### General trust measure (aggregate trust in branches of government and trust in elections) ### 
+
+cor.test(df$trust_branch, df$trust_elect) # 0.78
+
+df_trust_agg_no_na <- df[complete.cases(df[, c("trust_exec", "trust_legis", "trust_jud", "trust_elect")]), ]
+
+# Calculate alpha
+df_trust_agg_alpha <- alpha(df_trust_agg_no_na[, c("trust_exec", "trust_legis", "trust_jud", "trust_elect")])
+print(df_trust_agg_alpha) # .93
+
+# Means and SDs
+round(mean(df$trust_agg, na.rm = TRUE), 2)
+# 34.17
+round(sd(df$trust_agg, na.rm = TRUE), 2)
+# 26.27
+
+#### Efficacy ### 
+
+# Remove rows with NAs
+df_efficacy_no_na <- df[complete.cases(df[, c("efficacy_1", "efficacy_2", "efficacy_3")]), ]
+
+# Calculate alpha
+efficacy_alpa <- alpha(df_efficacy_no_na[, c("efficacy_1", "efficacy_2", "efficacy_3")])
+print(efficacy_alpa) # .92
+
+# Means and SDs
+round(mean(df$efficacy, na.rm = TRUE), 2)
+# 38.48
+round(sd(df$efficacy, na.rm = TRUE), 2)
+# 30.97
+
+#### Norms #### 
+
+# Correlation
+cor.test(df$norms_1, df$norms_2) # 0.83
+
+# Means and SDs
+round(mean(df$norms, na.rm = TRUE), 2)
+# 48.38
+round(sd(df$norms, na.rm = TRUE), 2)
+# 31.13
+
+#### Ideology ####
+
+# Correlation
+cor.test(df$ide_eco, df$ide_soc) # 0.7979924
+
+# Means and SDs
+round(mean(df$ide, na.rm = TRUE), 2)
+# 46.11
+round(sd(df$ide, na.rm = TRUE), 2)
+# 25.29
+
+### Age ###
+
+mean(df$age, na.rm = TRUE) 
+# 39.26628
+sd(df$age, na.rm = TRUE) 
+# 13.35923
+
+### Ideology ###
+
+mean(df$ide, na.rm = TRUE)
+# 46.10854
+sd(df$ide, na.rm = TRUE)
+# 25.29253
+
+### Income ###
+
+mean(df$income, na.rm = TRUE)
+# 1.930018
+sd(df$income, na.rm = TRUE)
+# 1.169751
+
+### Education ###
+
+mean(df$edu, na.rm = TRUE)
+# 2.513537
+sd(df$edu, na.rm = TRUE)
+# 1.16099
+
+### Pre-intervention intention to register to vote ###
+
+round(mean(df$pre_intention, na.rm = TRUE), 2)
+# 24.72168
+round(sd(df$pre_intention, na.rm = TRUE), 2)
+# 29.50063
+
+### Interest ###
+
+mean(df$interest, na.rm = TRUE)
+# 30.92896
+sd(df$interest, na.rm = TRUE)
+# 28.45163
+
+### Knowledge ###
+
+mean(df$knowledge, na.rm = TRUE)
+# 3.133065
+sd(df$knowledge, na.rm = TRUE)
+# 0.8227881
+
+### Trust in branches of government ###
+
+mean(df$trust_branch, na.rm = TRUE)
+# 33.77749
+sd(df$trust_branch, na.rm = TRUE)
+# 26.58892
+
+### Trust in fairness of elections ###
+
+mean(df$trust_elect, na.rm = TRUE)
+# 35.33549
+sd(df$trust_elect, na.rm = TRUE)
+# 30.20941
+
+### General trust measure ###
+
+mean(df$trust_agg, na.rm = TRUE)
+# 34.16737
+sd(df$trust_agg, na.rm = TRUE)
+# 26.26834
+
+### Efficacy ###
+
+mean(df$efficacy, na.rm = TRUE)
+# 38.48013
+sd(df$efficacy, na.rm = TRUE)
+# 30.97211
+
+### Norms ###
+
+mean(df$norms, na.rm = TRUE)
+# 48.37706
+sd(df$norms, na.rm = TRUE)
+# 31.12914
+
+
+```
+
+```{r, DVs categorical}
+
+summarize <- dplyr::summarize
+
+### Frequencies ###
+
+# Link clicks
+link_table <- df %>%
+  count(linkClicked) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Link Clicks", digits = 2)
+
+link_table
+
+# Confirmation of link clicks
+reg_confirm_table <- df %>%
+  count(reg_confirm) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Confirmation of Clicks", digits = 2)
+
+reg_confirm_table
+
+# Registration
+reg_table <- df %>%
+  count(register) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Registration", digits = 2)
+
+reg_table
+
+# Voting
+vote_table <- df %>%
+  count(vote) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Registration", digits = 2)
+
+vote_table
+
+# Candidate preference
+vote_today_table <- df %>%
+  count(vote_today) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Candidate Preference", digits = 2)
+
+vote_today_table
+
+```
+
+```{r, DVs by condition}
+
+summarize <- dplyr::summarize
+
+# Condition
+condition_table <- df %>%
+  dplyr::rename ('Condition' = 'condition') %>%
+  count(Condition) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+condition_table
+
+# For appendix 
+condition_xtable <- xtable(condition_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                          sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+print.xtable(condition_xtable, include.rownames = FALSE)
+
+##
+
+# Link clicks by condition
+
+link_condition_table <- df %>%
+  group_by(condition) %>%
+  summarize(
+    linkClicked_count = sum(linkClicked_n, na.rm = TRUE),        
+    linkClicked_percent = round(mean(linkClicked_n, na.rm = TRUE) * 100, 2),
+    Mean = round(mean(linkClicked_n, na.rm = TRUE), 2),
+    SD = round(sd(linkClicked_n, na.rm = TRUE), 2),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    absolute_increase_from_control = round(linkClicked_percent - linkClicked_percent[condition == "ControlCondition"], 2),
+    percent_increase_from_control = round(ifelse(condition == "ControlCondition", 0, 
+    (linkClicked_percent - linkClicked_percent[condition == "ControlCondition"]) /
+    linkClicked_percent[condition == "ControlCondition"] * 100), 2))
+
+# Add total row
+total_row_link <- df %>%
+  summarize(
+    condition = "Total",
+    linkClicked_count = sum(linkClicked_n, na.rm = TRUE),
+    linkClicked_percent = round(mean(linkClicked_n, na.rm = TRUE) * 100, 2),
+    Mean = round(mean(linkClicked_n, na.rm = TRUE), 2),
+    SD = round(sd(linkClicked_n, na.rm = TRUE), 2),
+    absolute_increase_from_control = NA,
+    percent_increase_from_control = NA
+  )
+
+link_condition_table <- bind_rows(link_condition_table, total_row_link)
+
+link_condition_table
+
+# For appendix
+link_condition_table <- link_condition_table %>%
+  dplyr::select(condition, linkClicked_count, linkClicked_percent, Mean, SD) %>%
+  rename(
+    Condition = condition,
+    Count = linkClicked_count,
+    Percent = linkClicked_percent,
+  ) 
+
+link_condition_table
+
+##
+
+# Registration by condition
+register_condition_table <- df %>% 
+  group_by(condition) %>%
+  mutate(register = as.numeric(as.character(register))) %>% 
+  summarize(
+    register_count = sum(register, na.rm = TRUE), 
+    register_percent = round(mean(register, na.rm = TRUE) * 100, 2),
+    Mean = round(mean(register, na.rm = TRUE), 2),
+    SD = round(sd(register, na.rm = TRUE), 2),
+  ) %>%
+  mutate(
+    absolute_increase_from_control = round(register_percent - register_percent[condition == "ControlCondition"], 2),
+    percent_increase_from_control = round(ifelse(condition == "ControlCondition", 0, 
+    (register_percent - register_percent[condition == "ControlCondition"]) /
+    register_percent[condition == "ControlCondition"] * 100), 2))
+
+register_condition_table
+
+total_row_reg <- df %>%
+  summarize(
+    condition = "Total",
+    register_count = sum(register_n, na.rm = TRUE),
+    register_percent = round(mean(register_n, na.rm = TRUE) * 100, 2),
+    Mean = round(mean(register_n, na.rm = TRUE), 2),
+    SD = round(sd(register_n, na.rm = TRUE), 2),
+    absolute_increase_from_control = NA,
+    percent_increase_from_control = NA
+  )
+
+register_condition_table <- bind_rows(register_condition_table, total_row_reg)
+
+register_condition_table
+
+# For appendix
+register_condition_table <- register_condition_table %>%
+  dplyr::select(condition, register_count, register_percent, Mean, SD) %>%
+  rename(
+    Condition = condition,
+    Count = register_count,
+    Percent = register_percent
+  )
+
+register_condition_table
+
+##
+
+# Voting 
+
+# Voting by condition
+voting_condition_table <- df %>% 
+  group_by(condition) %>%
+  mutate(vote = as.numeric(as.character(vote))) %>% 
+  summarize(
+    vote_count = sum(vote, na.rm = TRUE),  
+    vote_percent = round(mean(vote, na.rm = TRUE) * 100, 2),  
+    Mean = round(mean(vote, na.rm = TRUE), 2),
+    SD = round(sd(vote, na.rm = TRUE), 2),
+  ) %>%
+  mutate(
+    absolute_increase_from_control = round(vote_percent - vote_percent[condition == "ControlCondition"], 2),
+    percent_increase_from_control = round(ifelse(condition == "ControlCondition", 0,
+    (vote_percent - vote_percent[condition == "ControlCondition"]) /
+    vote_percent[condition == "ControlCondition"] * 100), 2))
+
+voting_condition_table
+
+# Add total row
+total_row_vote <- df %>%
+  summarize(
+    condition = "Total",
+    vote_count = sum(vote_n, na.rm = TRUE),
+    vote_percent = round(mean(vote_n, na.rm = TRUE) * 100, 2),
+    Mean = round(mean(vote_n, na.rm = TRUE), 2),
+    SD = round(sd(vote_n, na.rm = TRUE), 2),
+    absolute_increase_from_control = NA,
+    percent_increase_from_control = NA
+  )
+
+voting_condition_table <- bind_rows(voting_condition_table, total_row_vote)
+
+voting_condition_table
+
+# For appendix
+vote_condition_table <- voting_condition_table %>%
+  dplyr::select(condition, vote_count, vote_percent, Mean, SD) %>%
+  rename(
+    Condition = condition,
+    Count = vote_count,
+    Percent = vote_percent
+  )
+
+vote_condition_table
+
+##
+
+# Voting intentions by condition
+voteInt_condition_table <- df %>% 
+  group_by(condition) %>%
+  summarize(
+    Mean = round(mean(voteInt, na.rm = TRUE), 2), 
+    SD = round(sd(voteInt, na.rm = TRUE), 2)
+  ) 
+
+voteInt_condition_table
+
+# Add total row
+total_row_int <- df %>%
+  summarize(
+    condition = "Total",
+    Mean = round(mean(voteInt, na.rm = TRUE), 2), 
+    SD = round(sd(voteInt, na.rm = TRUE), 2)
+  )
+
+voteInt_condition_table <- bind_rows(voteInt_condition_table, total_row_int)
+
+voteInt_condition_table
+
+##
+
+# Trust by condition
+trust_condition_table <- df %>% 
+  group_by(condition) %>%
+  summarize(
+    Mean = round(mean(trust_agg, na.rm = TRUE), 2), 
+    SD = round(sd(trust_agg, na.rm = TRUE), 2)
+  ) 
+
+trust_condition_table
+
+# Add total row
+total_row_trust <- df %>%
+  summarize(
+    condition = "Total",
+    Mean = round(mean(trust_agg, na.rm = TRUE), 2), 
+    SD = round(sd(trust_agg, na.rm = TRUE), 2)
+  )
+
+trust_condition_table <- bind_rows(trust_condition_table, total_row_trust)
+
+trust_condition_table
+
+##
+
+# Efficacy by condition
+efficacy_condition_table <- df %>% 
+  group_by(condition) %>%
+  summarize(
+    Mean = round(mean(efficacy, na.rm = TRUE), 2), 
+    SD = round(sd(efficacy, na.rm = TRUE), 2)
+  ) 
+
+efficacy_condition_table
+
+# Add total row
+total_row_efficacy <- df %>%
+  summarize(
+    condition = "Total",
+    Mean = round(mean(efficacy, na.rm = TRUE), 2), 
+    SD = round(sd(efficacy, na.rm = TRUE), 2)
+  )
+
+efficacy_condition_table <- bind_rows(efficacy_condition_table, total_row_efficacy)
+
+efficacy_condition_table
+
+##
+
+# Norms by condition
+norms_condition_table <- df %>% 
+  group_by(condition) %>%
+  summarize(
+    Mean = round(mean(norms, na.rm = TRUE), 2), 
+    SD = round(sd(norms, na.rm = TRUE), 2)
+  ) 
+
+norms_condition_table
+
+# Add total row
+total_row_norms <- df %>%
+  summarize(
+    condition = "Total",
+    Mean = round(mean(norms, na.rm = TRUE), 2), 
+    SD = round(sd(norms, na.rm = TRUE), 2)
+  )
+
+norms_condition_table <- bind_rows(norms_condition_table, total_row_norms)
+
+norms_condition_table
+
+```
+
+```{r, Demographics}
+
+# Gender
+gender_table <- df %>%
+  count(gender) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Gender", digits = 2)
+
+gender_table 
+
+# Gender four categories table
+gender_r_table <- df %>%
+  count(gender_r) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+gender_r_table 
+
+# For appendix 
+gender_xtable <- xtable(gender_r_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                        sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+print.xtable(gender_xtable, include.rownames = FALSE)
+
+# Gender binary
+gender_bin_table <- df %>%
+  count(gend_bin) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Gender", digits = 2)
+
+gender_bin_table 
+
+# Race (including both ME categories)
+race_table <- df %>%
+  count(race) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  kable(caption = "Race", digits = 2)
+
+race_table
+
+# For appendix 
+race_xtable <- xtable(race_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                        sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+print.xtable(race_xtable, include.rownames = FALSE)
+
+# Income
+income_table <- df %>%
+  count(df$income) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+income_table
+
+# For appendix 
+income_xtable <- xtable(income_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                        sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+print.xtable(income_xtable, include.rownames = FALSE)
+
+# Education
+edu_table <- df %>%
+  count(df$edu) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+edu_table
+
+# For appendix 
+edu_xtable <- xtable(edu_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                        sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+print.xtable(edu_xtable, include.rownames = FALSE)
+
+# Party
+party_table <- df %>%
+  count(party) %>%
+  mutate(percentage = n / sum(n) * 100) 
+
+party_table 
+
+# For appendix 
+party_xtable <- xtable(party_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                        sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+print.xtable(party_xtable, include.rownames = FALSE)
+
+# Party lean
+ political_lean_table <- df %>%
+  count(political_lean) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Party Lean", digits = 2)
+
+political_lean_table 
+
+# Age 
+df$age_bins <- cut(df$age,
+                   breaks = c(18, 25, 35, 45, 55, 65, 75, 100),
+                   labels = c("18-24", "25-34", "35-44", "45-55", "55-64", "65-74","75+"),
+                   right = FALSE)
+
+age_table <- df %>%
+  count(age_bins) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Age", digits = 2)
+
+age_table
+
+```
+
+# Census
+
+```{r, Sample compared to census}
+
+# Census data of the unregistered
+# Source: U.S. Census Bureau, Current Population Survey Public-Use Data, November 2024: 	https://www.census.gov/data/tables/time-series/demo/voting-and-registration/p20-587.html
+
+# Gender (obtained from Table 1 in link)
+
+# Total unregistered: 28009
+
+# Male_Census 
+round((14756/28009)*100, digits = 2) # 52.68
+# Female_Census 
+round((13253/28009)*100, digits = 2) # 47.32
+
+# Gender survey data
+gender_bin_table 
+
+####
+
+# Age Census (obtained from Table 1)
+
+# Age1_Census 
+round((5955/28009)*100, digits =2) # 18-24 - 21.26
+# Age2_Census 
+round((6156/28009)*100, digits =2) # 25-34 - 21.98
+# Age3_Census 
+round((4859/28009)*100, digits =2) # 35-44 - 17.35
+# Age4_Census 
+round((3457/28009)*100, digits =2) # 45-54 - 12.34
+# Age4_Census 
+round((3400/28009)*100, digits =2) # 55-64 - 12.14
+# Age5_Census
+round((2504/28009)*100, digits =2) # 65-74 - 8.94
+# Age6_Census 
+round((1677/28009)*100, digits =2) # 75+ - 5.99
+
+# Age survey data
+age_table
+
+##
+
+# Race
+
+# Race Census (obtained from Table 2s)
+
+# Race_White_Census 
+round((14711/28009)*100, digits =2) # 52.52
+# Race_Black_Census 
+round((3612/28009)*100, digits =2) # 12.9
+# Race_Asian_Census 
+round((2089/28009)*100, digits =2) #7.46
+# Race_Latinx_Census 
+round((6776/28009)*100, digits =2) # 24.19
+
+# Race survey data
+
+race_table
+
+##
+
+# Build the comparison table
+comparison_table <- tribble(
+  ~Group, ~Sample, ~Census,
+  "Gender", NA, NA,
+  "Men", 28.55, 52.68,
+  "Women", 70.39, 47.32,
+  
+  "Age", NA, NA,
+  "18-24", 16.56, 21.26,
+  "25-34", 22.69, 21.98,
+  "35-44", 28.10, 17.35,
+  "45-54", 18.28, 12.34,
+  "55-64", 10.20, 12.14,
+  "65-74", 3.61, 8.94,
+  "75+", 0.55, 5.99,
+  
+  "Race/Ethnicity", NA, NA, 
+  "White (non-Hispanic)", 65.10, 52.52,
+  "Black/African American", 12.08, 12.90,
+  "Asian/Asian American", 3.90, 7.46,
+  "Hispanic/Latino", 8.83, 24.19
+)
+
+comparison_table
+
+# Latex
+comparison_xtable <- xtable(comparison_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                          sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+print.xtable(comparison_xtable, include.rownames = FALSE)
+
+```
+
+# Correlations
+
+```{r, Descriptives and correlation table - control condition sample}
+
+# Select variables
+vars <- c("voteInt", "linkClicked_n","register_n", "vote_n", "trust_agg", "efficacy", "norms",
+          "interest", "knowledge", "ide", "gend_bin", "age", "income", "edu") 
+
+# Subset data
+df_control_sub <- df %>%
+  filter(condition == "ControlCondition") %>% # control condition only
+  dplyr::select(all_of(vars))
+
+# Compute correlation matrix
+cor_mat_control <- as.data.frame(round(cor(df_control_sub, use = "pairwise.complete.obs"), 2)) 
+
+# Blank the upper triangle
+cor_mat_control[upper.tri(cor_mat_control)] <- NA
+
+# Function to compute correlation p-values
+cor_pmat <- function(mat) {
+  n <- ncol(mat)
+  p.mat <- matrix(NA, n, n)
+  colnames(p.mat) <- colnames(mat)
+  rownames(p.mat) <- colnames(mat)
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      test <- cor.test(mat[, i], mat[, j], use = "pairwise.complete.obs")
+      p.mat[i, j] <- p.mat[j, i] <- test$p.value
+    }
+  }
+  p.mat
+}
+
+# Get correlation and p-value matrices
+cor_mat_control <- cor(df_control_sub, use = "pairwise.complete.obs")
+p_mat_control <- cor_pmat(df_control_sub)
+
+# Blank upper triangle for p values
+cor_mat_control[upper.tri(cor_mat_control)] <- NA
+p_mat_control[upper.tri(p_mat_control)] <- NA
+
+# Significance stars
+get_stars <- function(p) {
+  ifelse(is.na(p), "", 
+         ifelse(p < 0.001, "***", 
+         ifelse(p < 0.01, "**", 
+         ifelse(p < 0.05, "*", ""))))
+}
+
+
+# Format correlations (round, remove leading 0s, add stars)
+formatted_cor_control <- matrix("", nrow = nrow(cor_mat_control), ncol = ncol(cor_mat_control),
+                        dimnames = dimnames(cor_mat_control))
+
+for (i in 1:nrow(cor_mat_control)) {
+  for (j in 1:ncol(cor_mat_control)) {
+    val <- cor_mat_control[i, j]
+    if (!is.na(val)) {
+      stars <- get_stars(p_mat_control[i, j])
+      val_fmt <- sprintf("%.2f", val)
+      val_fmt <- sub("^-0\\.", "-.", val_fmt)   # remove leading 0 
+      val_fmt <- sub("^0\\.", ".", val_fmt)     
+      formatted_cor_control[i, j] <- paste0(val_fmt, stars)
+    }
+  }
+}
+
+# Add row names as a column
+formatted_df_control <- as.data.frame(formatted_cor_control)
+formatted_df_control <- tibble::rownames_to_column(formatted_df_control, var = "Variable")
+
+formatted_df_control
+
+# Add means and SDs
+formatted_df_control$Mean <- round(sapply(df_control_sub, mean, na.rm = TRUE), 2)
+formatted_df_control$SD <- round(sapply(df_control_sub, sd, na.rm = TRUE), 2)
+
+# Move mean and SD to front
+formatted_df_control <- formatted_df_control %>%
+  relocate(Mean, .after = Variable) %>%
+  relocate(SD, .after = Mean)
+
+formatted_df_control
+
+# Rename variables (column)
+formatted_df_control <- formatted_df_control %>%
+  dplyr:: mutate(Variable = as.character(Variable)) %>%  # convert factor to character
+  dplyr::mutate(Variable = dplyr::recode(Variable,
+      voteInt = "1. Voting Intentions",
+      linkClicked_n = "2. Link Clicks",
+      register_n = "3. Registration",
+      vote_n = "4. Voter Turnout",
+      trust_agg = "5. Trust",
+      efficacy = "6. Efficacy",
+      interest = "7. Interest",
+      knowledge = "8. Knowledge",
+      ide = "9. Ideology",
+      norms = "10. Norms",
+      gend_bin = "11. Gender",
+      age = "12. Age",
+      income = "13. Income",
+      edu = "14. Education"
+  ))
+
+formatted_df_control
+
+# Rename variables (row)
+formatted_df_control <- formatted_df_control %>%
+  rename(
+    '1.' = voteInt,
+    '2.' = linkClicked_n,
+    '3.' = register_n,
+    '4.' = vote_n,
+    '5.' = trust_agg,
+    '6.' = efficacy,
+    '7.' = norms,
+    '8.' = interest,
+    '9.' = knowledge,
+    '10.' = ide,
+    '11.' = gend_bin,
+    '12.' = age,
+    '13.' = income,
+    '14.' = edu,
+  )
+
+formatted_df_control
+
+align_spec <- c("l", "l", "c", "c", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S")
+
+descriptives_control_xtable <- xtable(formatted_df_control, align = align_spec, booktabs = T, include.rownames = FALSE, 
+                          sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+# Print appendix
+print(descriptives_control_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+```
+
+```{r, Descriptives and correlation table - whole sample}
+
+# Select variables
+vars <- c("voteInt", "linkClicked_n","register_n", "vote_n", "trust_agg", "efficacy", "norms",
+          "interest", "knowledge", "ide", "gend_bin", "age", "income", "edu") 
+
+# Subset data
+df_sub <- df[, vars]
+
+# Compute correlation matrix
+cor_mat <- as.data.frame(round(cor(df_sub, use = "pairwise.complete.obs"), 2)) 
+
+# Blank the upper triangle
+cor_mat[upper.tri(cor_mat)] <- NA
+
+# Function to compute correlation p-values
+cor_pmat <- function(mat) {
+  n <- ncol(mat)
+  p.mat <- matrix(NA, n, n)
+  colnames(p.mat) <- colnames(mat)
+  rownames(p.mat) <- colnames(mat)
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      test <- cor.test(mat[, i], mat[, j], use = "pairwise.complete.obs")
+      p.mat[i, j] <- p.mat[j, i] <- test$p.value
+    }
+  }
+  p.mat
+}
+
+# Get correlation and p-value matrices
+cor_mat <- cor(df_sub, use = "pairwise.complete.obs")
+p_mat <- cor_pmat(df_sub)
+
+# Blank upper triangle for p values
+cor_mat[upper.tri(cor_mat)] <- NA
+p_mat[upper.tri(p_mat)] <- NA
+
+# Significance stars
+get_stars <- function(p) {
+  ifelse(is.na(p), "", 
+         ifelse(p < 0.001, "***", 
+         ifelse(p < 0.01, "**", 
+         ifelse(p < 0.05, "*", ""))))
+}
+
+# Format correlations (round, remove leading 0s, add stars)
+formatted_cor <- matrix("", nrow = nrow(cor_mat), ncol = ncol(cor_mat),
+                        dimnames = dimnames(cor_mat))
+
+for (i in 1:nrow(cor_mat)) {
+  for (j in 1:ncol(cor_mat)) {
+    val <- cor_mat[i, j]
+    if (!is.na(val)) {
+      stars <- get_stars(p_mat[i, j])
+      val_fmt <- sprintf("%.2f", val)
+      val_fmt <- sub("^-0\\.", "-.", val_fmt)   # remove leading 0 
+      val_fmt <- sub("^0\\.", ".", val_fmt)     
+      formatted_cor[i, j] <- paste0(val_fmt, stars)
+    }
+  }
+}
+
+# Add row names as a column
+formatted_df <- as.data.frame(formatted_cor)
+formatted_df <- tibble::rownames_to_column(formatted_df, var = "Variable")
+
+formatted_df
+
+# Add means and SDs
+formatted_df$Mean <- round(sapply(df_sub, mean, na.rm = TRUE), 2)
+formatted_df$SD <- round(sapply(df_sub, sd, na.rm = TRUE), 2)
+
+# Move mean and SD to front
+formatted_df <- formatted_df %>%
+  relocate(Mean, .after = Variable) %>%
+  relocate(SD, .after = Mean)
+
+formatted_df
+
+# Rename variables (column)
+formatted_df <- formatted_df %>%
+  dplyr:: mutate(Variable = as.character(Variable)) %>%  # convert factor to character
+  dplyr::mutate(Variable = dplyr::recode(Variable,
+      voteInt = "1. Voting Intentions",
+      linkClicked_n = "2. Link Clicks",
+      register_n = "3. Registration",
+      vote_n = "4. Voter Turnout",
+      trust_agg = "5. Trust",
+      efficacy = "6. Efficacy",
+      norms = "7. Norms",
+      interest = "8. Interest",
+      knowledge = "9. Knowledge",
+      ide = "10. Ideology",
+      gend_bin = "11. Gender",
+      age = "12. Age",
+      income = "13. Income",
+      edu = "14. Education"
+  ))
+
+formatted_df
+
+# Rename variables (row)
+formatted_df <- formatted_df %>%
+  rename(
+    '1.' = voteInt,
+    '2.' = linkClicked_n,
+    '3.' = register_n,
+    '4.' = vote_n,
+    '5.' = trust_agg,
+    '6.' = efficacy,
+    '7.' = norms,
+    '8.' = interest,
+    '9.' = knowledge,
+    '10.' = ide,
+    '11.' = gend_bin,
+    '12.' = age,
+    '13.' = income,
+    '14.' = edu,
+  )
+
+formatted_df
+
+align_spec <- c("l", "l", "c", "c", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S")
+
+descriptives_xtable <- xtable(formatted_df, align = align_spec, booktabs = T, include.rownames = FALSE, 
+                          sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+# Print 
+print(descriptives_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+```
+
+### Histograms
+
+```{r, Histogram}
+
+# Reshape data to long format for all variables
+
+df_long <- df %>%
+  pivot_longer(
+    cols = c("pre_intention", "interest", "voteInt", 
+             "trust_elect", "trust_exec", "trust_legis", "trust_jud", "trust_branch",
+             "efficacy_1", "efficacy_2", "efficacy_3", "efficacy", "knowledge",
+             "norms_1", "norms_2", "norms", "ide_soc", "ide_eco", "ide", "age"),
+    names_to = "variable",   
+    values_to = "value"     
+  )
+
+# Plot 
+hist <- ggplot(df_long, aes(x = value, fill = variable)) + 
+  geom_histogram(binwidth = 1, alpha = 0.7, position = "dodge") + 
+  facet_wrap(~ variable, scales = "free") + 
+  labs(x = "Value", y = "Frequency") + 
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white"),  # Set panel background to white
+    plot.background = element_rect(fill = "white"),   # Set plot background to white
+    legend.background = element_rect(fill = "white")  # Set legend background to white
+  )
+
+hist
+
+# Save the plot with a white background
+# ggsave("Voter_Reg_Histograms.png", plot = hist, width = 15, height = 15, units = "in", dpi = 300)
+
+```

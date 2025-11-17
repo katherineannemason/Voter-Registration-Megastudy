@@ -1,0 +1,1693 @@
+---
+title: "Voter Registration Analyses Additional Psych DVs"
+author: "Katherine Mason"
+date: "2025-08-31"
+output: html_document
+---
+
+############################################### Prepare Data
+
+```{r, Load Packages}
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(psych)
+library(ltm)
+library(Hmisc)
+library(reticulate)
+library(nlme)
+library(ordinal)
+library(carData)
+library(car)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(clubSandwich)
+library(sandwich)
+library(CR2)
+library(lsmeans)
+library(stats)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(glmmTMB) 
+library(MASS)
+library(broom) 
+library(knitr)
+library(tools)
+library(sjstats)
+library(effectsize)
+library(pscl)
+library(logistf)
+library(lavaan)
+library(kableExtra)
+library(boot)
+library(margins)
+library(purrr)
+library(xtable)
+library(gt) 
+library(weights)
+library(mediation)
+library(QuantPsyc)
+library(lm.beta)
+library(parameters)
+library(esc)
+library(corrplot)
+library(ivreg)
+
+```
+
+```{r, Load and Prepare Data}
+
+df <- read.csv("Voter_Reg_STRICT.csv")
+head(df)
+
+nrow(df)
+
+zdf <- read.csv("Voter_Reg_STRICT_STANDARDIZED.csv")
+head(zdf)
+
+nrow(zdf)
+
+## Prepare variables ##
+
+# Set reference level as the control conditon
+df$condition <- relevel(as.factor(df$condition), ref = "ControlCondition")
+
+zdf$condition <- relevel(as.factor(zdf$condition), ref = "ControlCondition")
+
+# Make sure link click, register, and vote variables are factors for regressions
+df$linkClicked <- as.factor(df$linkClicked)
+df$register <- as.factor(df$register)
+df$vote <- as.factor(df$vote)
+
+```
+
+#############################################################################################################
+################################## Trust in the Branches of the Government ##################################
+#############################################################################################################
+
+```{r, Trust in Branches of Government Two-Tailed}
+
+# Fit the model
+Trust_Branches_Model_1 <- lm(trust_branch ~ condition, data = df)
+summary(Trust_Branches_Model_1)
+
+Trust_Branches_Model_1_robust <- coeftest(Trust_Branches_Model_1, vcov = vcovHC(Trust_Branches_Model_1, type = "HC3"))
+Trust_Branches_Model_1_robust
+
+Trust_Branches_Model_1_Stand <- lm(trust_branch_c ~ condition, data = zdf)
+summary(Trust_Branches_Model_1_Stand)
+
+# Use two tailed lm function to format
+Trust_Branches_Model_1_Results <- format_lm_output_twotailed(Trust_Branches_Model_1_robust, Trust_Branches_Model_1_Stand)
+
+# Outputs:
+Trust_Branches_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Trust_Branches_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Trust in the Fairness of Elections
+
+```{r, Trust in Fairness of Elections Two-Tailed}
+
+# Fit the model
+Trust_Elect_Model_1 <- lm(trust_elect ~ condition, data = df)
+summary(Trust_Elect_Model_1)
+
+Trust_Elect_Model_1_robust <- coeftest(Trust_Elect_Model_1, vcov = vcovHC(Trust_Elect_Model_1, type = "HC3"))
+Trust_Elect_Model_1_robust
+
+Trust_Elect_Model_1_Stand <- lm(trust_elect_c ~ condition, data = zdf)
+summary(Trust_Elect_Model_1_Stand)
+
+# Use two tailed lm function to format
+Trust_Elect_Model_1_Results <- format_lm_output_twotailed(Trust_Elect_Model_1_robust, Trust_Elect_Model_1_Stand)
+
+# Outputs:
+Trust_Elect_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Trust_Elect_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+## Composite Trust
+
+```{r, Composite Trust Two-Tailed}
+
+# Fit the model
+TrustAgg_Model_1 <- lm(trust_agg ~ condition, data = df)
+summary(TrustAgg_Model_1)
+
+TrustAgg_Model_1_robust <- coeftest(TrustAgg_Model_1, vcov = vcovHC(TrustAgg_Model_1, type = "HC3"))
+TrustAgg_Model_1_robust
+
+TrustAgg_Model_1_Stand <- lm(trust_agg_c ~ condition, data = zdf)
+summary(TrustAgg_Model_1_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_1_Results <- format_lm_output_twotailed(TrustAgg_Model_1_robust, TrustAgg_Model_1_Stand)
+
+# Outputs:
+TrustAgg_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+# Plot percentages within each condition (do not use bs from function here)
+TrustAgg_Model_1_Results_plot <- as.data.frame(emmeans(TrustAgg_Model_1, ~ condition, level = 0.95)) %>%
+  rename(Condition = condition) %>%
+    mutate(
+    Mean = emmean,
+    Lower_ci = lower.CL,
+    Upper_ci = upper.CL
+  ) %>%
+dplyr::select(Condition, Mean, Lower_ci, Upper_ci) 
+
+rownames(TrustAgg_Model_1_Results_plot) <- NULL
+
+TrustAgg_Model_1_Results_plot
+
+# write.csv(TrustAgg_Model_1_Results_plot, file = "Trust_Percent.csv")
+
+```
+
+# Tukey
+
+```{r, Composite Trust Tukey}
+
+##### Adjust p ####
+
+# Escalating Commitment as the reference condition
+
+df$condition_ec <- factor(df$condition,
+  levels = c("EscalatingCommitment", "ControlCondition", "AntiGovernment", "SystemJustification",
+             "PersonalImportance", "CorrectingMisperceptions", "DynamicNorms", "ImplementationIntentions",
+             "InterdependentConstrual", "MoralReasons", "SelfGeneratedNorms")
+)
+
+TrustAgg_Model_1_EC <- lm(trust_agg ~ condition_ec, data = df)
+summary(TrustAgg_Model_1_EC)
+
+# Marginal means
+emm_trust <- emmeans(TrustAgg_Model_1_EC, ~ condition_ec)
+
+# Tukey-adjusted pairwise comparisons
+tukey_trust <- as.data.frame(summary(pairs(emm_trust, adjust = "Tukey")))
+
+tukey_trust
+
+# Keep relevant comparisons 
+ec_trust <- tukey_trust %>%
+  filter(grepl("EscalatingCommitment", contrast))
+
+# Apply formatting and sorting
+ec_trust_clean <- ec_trust %>%
+  mutate(
+    Contrast = contrast,
+    Estimate = sprintf("%.2f", estimate),
+    SE = sprintf("%.2f", SE),
+    t = sprintf("%.2f", t.ratio),
+    p = ifelse(p.value < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p.value)))) %>%
+    dplyr::select(Contrast, Estimate, SE, t, p) %>%
+    filter(!Contrast == 'EscalatingCommitment - ControlCondition') # Control condition not needed
+
+ec_trust_clean
+
+# For latex
+align_spec <- c("l", "l", "r", "r", "r", "r")
+
+ec_trust_clean_appendix_xtable <- xtable(ec_trust_clean, align = align_spec, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+print.xtable(ec_trust_clean_appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Mixed Model Accounting for Within-state Non-independence
+
+```{r, Trust MLM Robustness Check Two-Tailed}
+
+# Fit the model
+TrustAgg_Model_2 <- lmer(trust_agg ~ condition + (1 | state), data = df)
+summary(TrustAgg_Model_2)
+
+TrustAgg_Model_2_Stand <- lmer(trust_agg_c ~ condition + (1 | state), data = zdf)
+summary(TrustAgg_Model_2_Stand)
+
+# Use one tailed lm MLM function to format 
+TrustAgg_Model_2_Results <- format_linear_mixed_output_twotailed(TrustAgg_Model_2, TrustAgg_Model_2_Stand)
+
+# Outputs:
+TrustAgg_Model_2_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_2_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# With covariates
+
+```{r, Composite Trust with Covariates Two-Tailed}
+
+# Fit the model
+TrustAgg_Model_3 <- lm(trust_agg ~ condition + pre_intention_c + gend_e + Asian_E + Black_E + Latinx_E + ME_E + Native_E + Multiracial_E + Other_E + age_c + income_c + edu_c, data = df)
+summary(TrustAgg_Model_3)
+
+TrustAgg_Model_3_robust <- coeftest(TrustAgg_Model_3, vcov = vcovHC(TrustAgg_Model_3, type = "HC3"))
+TrustAgg_Model_3_robust
+
+TrustAgg_Model_3_Stand <- lm(trust_agg_c ~ condition + pre_intention_c + gend_e + Asian_E + Black_E + Latinx_E + ME_E + Native_E + Multiracial_E + Other_E + age_c + income_c + edu_c, data = zdf)
+summary(TrustAgg_Model_3_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_3_Results <- format_lm_output_twotailed(TrustAgg_Model_3_robust, TrustAgg_Model_3_Stand)
+
+# Outputs:
+TrustAgg_Model_3_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_3_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+
+############# Trust Moderations (two-tailed)
+
+# Ideology
+
+```{r, Composite Trust Interaction with Ideology Two-Tailed}
+
+# Fit the model
+TrustAgg_Model_4 <- lm(trust_agg ~ condition*ide_c, data = df)
+summary(TrustAgg_Model_4)
+
+TrustAgg_Model_4_robust <- coeftest(TrustAgg_Model_4, vcov = vcovHC(TrustAgg_Model_4, type = "HC3"))
+TrustAgg_Model_4_robust
+
+# Fit the model
+TrustAgg_Model_4_Stand <- lm(trust_agg_c ~ condition*ide_c, data = zdf)
+summary(TrustAgg_Model_4_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_4_Results <- format_lm_output_twotailed(TrustAgg_Model_4_robust, TrustAgg_Model_4_Stand)
+
+# Outputs:
+TrustAgg_Model_4_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_4_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Demographics
+
+```{r, Composite Trust Interaction with Gender Two-Tailed}
+
+# Condition*gender
+TrustAgg_Model_5 <- lm(trust_agg ~ condition*gend_e, data = df)
+summary(TrustAgg_Model_5) 
+
+TrustAgg_Model_5_robust <- coeftest(TrustAgg_Model_5, vcov = vcovHC(TrustAgg_Model_5, type = "HC3"))
+TrustAgg_Model_5_robust
+
+TrustAgg_Model_5_Stand <- lm(trust_agg_c ~ condition*gend_e, data = zdf)
+summary(TrustAgg_Model_5_Stand) 
+
+# Use two tailed lm function to format
+TrustAgg_Model_5_Results <- format_lm_output_twotailed(TrustAgg_Model_5_robust, TrustAgg_Model_5_Stand)
+
+# Outputs:
+TrustAgg_Model_5_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_5_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+```{r, Composite Trust Interaction with Race Two-Tailed}
+
+# Condition*race
+TrustAgg_Model_6 <- lm(trust_agg ~ condition*race_bin_e, data = df)
+summary(TrustAgg_Model_6) 
+
+TrustAgg_Model_6_robust <- coeftest(TrustAgg_Model_6, vcov = vcovHC(TrustAgg_Model_6, type = "HC3"))
+TrustAgg_Model_6_robust
+
+TrustAgg_Model_6_Stand <- lm(trust_agg_c ~ condition*race_bin_e, data = zdf)
+summary(TrustAgg_Model_6_Stand) 
+
+# Use two tailed lm function to format
+TrustAgg_Model_6_Results <- format_lm_output_twotailed(TrustAgg_Model_6_robust, TrustAgg_Model_6_Stand)
+
+# Outputs:
+TrustAgg_Model_6_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_6_Results$appendix_xtable, include.rownames = FALSE, longtable = TRUE) # Syntax for latex editor
+
+```
+
+```{r, Composite Trust Interaction with Age Two-Tailed}
+
+# Condition*age
+TrustAgg_Model_7 <- lm(trust_agg ~ condition*age_c, data = df)
+summary(TrustAgg_Model_7) 
+
+TrustAgg_Model_7_robust <- coeftest(TrustAgg_Model_7, vcov = vcovHC(TrustAgg_Model_7, type = "HC3"))
+TrustAgg_Model_7_robust
+
+TrustAgg_Model_7_Stand <- lm(trust_agg_c ~ condition*age_c, data = zdf)
+summary(TrustAgg_Model_7_Stand) 
+
+# Use two tailed lm function to format
+TrustAgg_Model_7_Results <- format_lm_output_twotailed(TrustAgg_Model_7_robust, TrustAgg_Model_7_Stand)
+
+# Outputs:
+TrustAgg_Model_7_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_7_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+```{r, Composite Trust Interaction with Income Two-Tailed}
+
+# Condition*income
+TrustAgg_Model_8 <- lm(trust_agg ~ condition*income_c, data = df)
+summary(TrustAgg_Model_8) 
+
+TrustAgg_Model_8_robust <- coeftest(TrustAgg_Model_8, vcov = vcovHC(TrustAgg_Model_8, type = "HC3"))
+TrustAgg_Model_8_robust
+
+TrustAgg_Model_8_Stand <- lm(trust_agg_c ~ condition*income_c, data = zdf)
+summary(TrustAgg_Model_8_Stand) 
+
+# Use two tailed lm function to format
+TrustAgg_Model_8_Results <- format_lm_output_twotailed(TrustAgg_Model_8_robust, TrustAgg_Model_8_Stand)
+
+# Outputs:
+TrustAgg_Model_8_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_8_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+```{r, Composite Trust Interaction with Education Two-Tailed}
+
+# Condition*education
+TrustAgg_Model_9 <- lm(trust_agg ~ condition*edu_c, data = df)
+summary(TrustAgg_Model_9) 
+
+TrustAgg_Model_9_robust <- coeftest(TrustAgg_Model_9, vcov = vcovHC(TrustAgg_Model_9, type = "HC3"))
+TrustAgg_Model_9_robust
+
+TrustAgg_Model_9_Stand <- lm(trust_agg_c ~ condition*edu_c, data = zdf)
+summary(TrustAgg_Model_9_Stand) 
+
+# Use two tailed lm function to format
+TrustAgg_Model_9_Results <- format_lm_output_twotailed(TrustAgg_Model_9_robust, TrustAgg_Model_9_Stand)
+
+# Outputs:
+TrustAgg_Model_9_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_9_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Pre-Intention to Register 
+
+```{r, Composite Trust Interaction with Pre-Intention to Register Two-Tailed}
+
+# Fit the model
+TrustAgg_Model_10 <- lm(trust_agg ~ condition*pre_intention_c, data = df)
+summary(TrustAgg_Model_10)
+
+TrustAgg_Model_10_robust <- coeftest(TrustAgg_Model_10, vcov = vcovHC(TrustAgg_Model_10, type = "HC3"))
+TrustAgg_Model_10_robust 
+
+TrustAgg_Model_10_Stand <- lm(trust_agg_c ~ condition*pre_intention_c, data = zdf)
+summary(TrustAgg_Model_10_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_10_Results <- format_lm_output_twotailed(TrustAgg_Model_10_robust, TrustAgg_Model_10_Stand)
+
+# Outputs:
+TrustAgg_Model_10_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_10_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+## 
+
+# Low intention to register
+
+TrustAgg_Model_11 <- lm(trust_agg ~ condition*pre_intention_low, data = df)
+summary(TrustAgg_Model_11)
+
+TrustAgg_Model_11_robust <- coeftest(TrustAgg_Model_11, vcov = vcovHC(TrustAgg_Model_11, type = "HC3"))
+TrustAgg_Model_11_robust 
+
+TrustAgg_Model_11_Stand <- lm(trust_agg_c ~ condition*pre_intention_low, data = zdf)
+summary(TrustAgg_Model_11_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_11_Results <- format_lm_output_twotailed(TrustAgg_Model_11_robust, TrustAgg_Model_11_Stand)
+
+# Outputs:
+TrustAgg_Model_11_Results$appendix   # Cleaned and formatted for LaTeX
+
+##
+
+# High intention to register
+
+TrustAgg_Model_12 <- lm(trust_agg ~ condition*pre_intention_high, data = df)
+summary(TrustAgg_Model_12)
+
+TrustAgg_Model_12_robust <- coeftest(TrustAgg_Model_12, vcov = vcovHC(TrustAgg_Model_12, type = "HC3"))
+TrustAgg_Model_12_robust 
+
+TrustAgg_Model_12_Stand <- lm(trust_agg_c ~ condition*pre_intention_high, data = zdf)
+summary(TrustAgg_Model_12_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_12_Results <- format_lm_output_twotailed(TrustAgg_Model_12_robust, TrustAgg_Model_12_Stand)
+
+# Outputs:
+TrustAgg_Model_12_Results$appendix   # Cleaned and formatted for LaTeX
+
+```
+
+# Interest
+
+```{r, Composite Trust Interaction with Interest Two-Tailed}
+
+# Fit the model
+TrustAgg_Model_13 <- lm(trust_agg ~ condition*interest_c, data = df)
+summary(TrustAgg_Model_13)
+
+TrustAgg_Model_13_robust <- coeftest(TrustAgg_Model_13, vcov = vcovHC(TrustAgg_Model_13, type = "HC3"))
+TrustAgg_Model_13_robust 
+
+TrustAgg_Model_13_Stand <- lm(trust_agg_c ~ condition*interest_c, data = zdf)
+summary(TrustAgg_Model_13_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_13_Results <- format_lm_output_twotailed(TrustAgg_Model_13_robust, TrustAgg_Model_13_Stand)
+
+# Outputs:
+TrustAgg_Model_13_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_13_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Knowledge
+
+```{r, Composite Trust Interaction with Knowledge Two-Tailed}
+
+# Fit the model
+TrustAgg_Model_14 <- lm(trust_agg ~ condition*knowledge_c, data = df)
+summary(TrustAgg_Model_14)
+
+TrustAgg_Model_14_robust <- coeftest(TrustAgg_Model_14, vcov = vcovHC(TrustAgg_Model_14, type = "HC3"))
+TrustAgg_Model_14_robust
+
+TrustAgg_Model_14_Stand <- lm(trust_agg_c ~ condition*knowledge_c, data = zdf)
+summary(TrustAgg_Model_14_Stand)
+
+# Use two tailed lm function to format
+TrustAgg_Model_14_Results <- format_lm_output_twotailed(TrustAgg_Model_14_robust, TrustAgg_Model_14_Stand)
+
+# Outputs:
+TrustAgg_Model_14_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(TrustAgg_Model_14_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+#############################################################################################################
+########################################### Feelings of Efficacy ############################################ 
+#############################################################################################################
+
+```{r, Feelings of Efficacy Two-Tailed}
+
+# Fit the model
+Efficacy_Model_1 <- lm(efficacy ~ condition, data = df)
+summary(Efficacy_Model_1)
+
+Efficacy_Model_1_robust <- coeftest(Efficacy_Model_1, vcov = vcovHC(Efficacy_Model_1, type = "HC3"))
+Efficacy_Model_1_robust
+
+Efficacy_Model_1_Stand <- lm(efficacy_c ~ condition, data = zdf)
+summary(Efficacy_Model_1_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_1_Results <- format_lm_output_twotailed(Efficacy_Model_1_robust, Efficacy_Model_1_Stand)
+
+# Outputs:
+Efficacy_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+# Plot percentages within each condition (do not use bs from function here)
+Efficacy_Model_1_Results_plot <- as.data.frame(emmeans(Efficacy_Model_1, ~ condition, level = 0.95)) %>%
+  rename(Condition = condition) %>%
+    mutate(
+    Mean = emmean,
+    Lower_ci = lower.CL,
+    Upper_ci = upper.CL
+  ) %>%
+dplyr::select(Condition, Mean, Lower_ci, Upper_ci) 
+
+rownames(Efficacy_Model_1_Results_plot) <- NULL
+
+Efficacy_Model_1_Results_plot
+
+# write.csv(Efficacy_Model_1_Results_plot, file = "Efficacy_Percent.csv")
+
+```
+
+# Tukey
+
+```{r, Efficacy Tukey}
+
+##### Adjust p ####
+
+# Escalating Commitment as the reference condition
+
+df$condition_ec <- factor(df$condition,
+  levels = c("EscalatingCommitment", "ControlCondition", "AntiGovernment", "SystemJustification",
+             "PersonalImportance", "CorrectingMisperceptions", "DynamicNorms", "ImplementationIntentions",
+             "InterdependentConstrual", "MoralReasons", "SelfGeneratedNorms")
+)
+
+Efficacy_Model_1_EC <- lm(efficacy ~ condition_ec, data = df)
+summary(Efficacy_Model_1_EC)
+
+# Marginal means
+emm_efficacy <- emmeans(Efficacy_Model_1_EC, ~ condition_ec)
+
+# Tukey-adjusted pairwise comparisons
+tukey_efficacy <- as.data.frame(summary(pairs(emm_efficacy, adjust = "Tukey")))
+
+tukey_efficacy
+
+# Keep relevant comparisons 
+ec_efficacy <- tukey_efficacy %>%
+  filter(grepl("EscalatingCommitment", contrast))
+
+# Apply formatting and sorting
+ec_efficacy_clean <- ec_efficacy %>%
+  mutate(
+    Contrast = contrast,
+    Estimate = sprintf("%.2f", estimate),
+    SE = sprintf("%.2f", SE),
+    t = sprintf("%.2f", t.ratio),
+    p = ifelse(p.value < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p.value)))) %>%
+    dplyr::select(Contrast, Estimate, SE, t, p) %>%
+    filter(!Contrast == 'EscalatingCommitment - ControlCondition') # Control condition not needed
+
+ec_efficacy_clean
+
+# For latex
+align_spec <- c("l", "l", "r", "r", "r", "r")
+
+ec_efficacy_clean_appendix_xtable <- xtable(ec_efficacy_clean, align = align_spec, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+print.xtable(ec_efficacy_clean_appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Mixed Model Accounting for Within-state Non-independence
+
+```{r, Efficacy MLM Robustness Check Two-Tailed}
+
+# Fit the model
+Efficacy_Model_2 <- lmer(efficacy ~ condition + (1 | state), data = df)
+summary(Efficacy_Model_2)
+
+Efficacy_Model_2_Stand <- lmer(efficacy_c ~ condition + (1 | state), data = zdf)
+summary(Efficacy_Model_2_Stand)
+
+# Use one tailed lm MLM function to format 
+Efficacy_Model_2_Results <- format_linear_mixed_output_twotailed(Efficacy_Model_2, Efficacy_Model_2_Stand)
+
+# Outputs:
+Efficacy_Model_2_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_2_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# With covariates
+
+```{r, Feelings of Efficacy with Covariates Two-Tailed}
+
+# Fit the model
+Efficacy_Model_3 <- lm(efficacy ~ condition + pre_intention_c + gend_e + Asian_E + Black_E + Latinx_E + ME_E + Native_E + Multiracial_E + Other_E + age_c + income_c + edu_c, data = df)
+summary(Efficacy_Model_3)
+
+Efficacy_Model_3_robust <- coeftest(Efficacy_Model_3, vcov = vcovHC(Efficacy_Model_3, type = "HC3"))
+Efficacy_Model_3_robust
+
+Efficacy_Model_3_Stand <- lm(efficacy_c ~ condition + pre_intention_c + gend_e + Asian_E + Black_E + Latinx_E + ME_E + Native_E + Multiracial_E + Other_E + age_c + income_c + edu_c, data = zdf)
+summary(Efficacy_Model_3_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_3_Results <- format_lm_output_twotailed(Efficacy_Model_3_robust, Efficacy_Model_3_Stand)
+
+# Outputs:
+Efficacy_Model_3_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_3_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+
+############# Efficacy Moderations (two-tailed)
+
+# Ideology
+
+```{r, Feelings of Efficacy Interaction with Ideology Two-Tailed}
+
+# Fit the model
+Efficacy_Model_4 <- lm(efficacy ~ condition*ide_c, data = df)
+summary(Efficacy_Model_4)
+
+Efficacy_Model_4_robust <- coeftest(Efficacy_Model_4, vcov = vcovHC(Efficacy_Model_4, type = "HC3"))
+Efficacy_Model_4_robust
+
+Efficacy_Model_4_Stand <- lm(efficacy_c ~ condition*ide_c, data = zdf)
+summary(Efficacy_Model_4_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_4_Results <- format_lm_output_twotailed(Efficacy_Model_4_robust, Efficacy_Model_4_Stand)
+
+# Outputs:
+Efficacy_Model_4_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_4_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+##
+
+# Liberals 
+
+# Fit the model
+Efficacy_Model_5 <- lm(efficacy ~ condition*ide_low, data = df)
+summary(Efficacy_Model_5)
+
+Efficacy_Model_5_robust <- coeftest(Efficacy_Model_5, vcov = vcovHC(Efficacy_Model_5, type = "HC3"))
+Efficacy_Model_5_robust
+
+Efficacy_Model_5_Stand <- lm(efficacy_c ~ condition*ide_low, data = zdf)
+summary(Efficacy_Model_5_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_5_Results <- format_lm_output_twotailed(Efficacy_Model_5_robust, Efficacy_Model_5_Stand)
+
+# Outputs:
+Efficacy_Model_5_Results$appendix   # Cleaned and formatted for LaTeX
+
+##
+
+# Conservatives 
+
+# Fit the model
+Efficacy_Model_6 <- lm(efficacy ~ condition*ide_high, data = df)
+summary(Efficacy_Model_6)
+
+Efficacy_Model_6_robust <- coeftest(Efficacy_Model_6, vcov = vcovHC(Efficacy_Model_6, type = "HC3"))
+Efficacy_Model_6_robust
+
+Efficacy_Model_6_Stand <- lm(efficacy_c ~ condition*ide_high, data = zdf)
+summary(Efficacy_Model_6_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_6_Results <- format_lm_output_twotailed(Efficacy_Model_6_robust, Efficacy_Model_6_Stand)
+
+# Outputs:
+Efficacy_Model_6_Results$appendix   # Cleaned and formatted for LaTeX
+
+```
+
+# Demographics
+
+```{r, Efficacy Interaction with Gender Two-Tailed}
+
+# Condition*gender
+Efficacy_Model_7 <- lm(efficacy ~ condition*gend_e, data = df)
+summary(Efficacy_Model_7) 
+
+Efficacy_Model_7_robust <- coeftest(Efficacy_Model_7, vcov = vcovHC(Efficacy_Model_7, type = "HC3"))
+Efficacy_Model_7_robust
+
+Efficacy_Model_7_Stand <- lm(efficacy_c ~ condition*gend_e, data = zdf)
+summary(Efficacy_Model_7_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_7_Results <- format_lm_output_twotailed(Efficacy_Model_7_robust, Efficacy_Model_7_Stand)
+
+# Outputs:
+Efficacy_Model_7_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_7_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+##
+
+# Men
+
+Efficacy_Model_8 <- lm(efficacy ~ condition*gend_bin, data = df)
+summary(Efficacy_Model_8) 
+
+Efficacy_Model_8_robust <- coeftest(Efficacy_Model_8, vcov = vcovHC(Efficacy_Model_8, type = "HC3"))
+Efficacy_Model_8_robust
+
+Efficacy_Model_8_Stand <- lm(efficacy_c ~ condition*gend_bin, data = zdf)
+summary(Efficacy_Model_8_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_8_Results <- format_lm_output_twotailed(Efficacy_Model_8_robust, Efficacy_Model_8_Stand)
+
+# Outputs:
+Efficacy_Model_8_Results$appendix
+
+##
+
+# Women
+
+Efficacy_Model_9 <- lm(efficacy ~ condition*gend_bin_r, data = df)
+summary(Efficacy_Model_9) 
+
+Efficacy_Model_9_robust <- coeftest(Efficacy_Model_9, vcov = vcovHC(Efficacy_Model_9, type = "HC3"))
+Efficacy_Model_9_robust
+
+Efficacy_Model_9_Stand <- lm(efficacy_c ~ condition*gend_bin_r, data = zdf)
+summary(Efficacy_Model_9_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_9_Results <- format_lm_output_twotailed(Efficacy_Model_9_robust, Efficacy_Model_9_Stand)
+
+# Outputs:
+Efficacy_Model_9_Results$appendix
+
+```
+
+```{r, Efficacy Interaction with Race Two-Tailed}
+
+# Condition*race
+Efficacy_Model_10 <- lm(efficacy ~ condition*race_bin_e, data = df)
+summary(Efficacy_Model_10)
+
+Efficacy_Model_10_robust <- coeftest(Efficacy_Model_10, vcov = vcovHC(Efficacy_Model_10, type = "HC3"))
+Efficacy_Model_10_robust
+
+Efficacy_Model_10_Stand <- lm(efficacy_c ~ condition*race_bin_e, data = zdf)
+summary(Efficacy_Model_10_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_10_Results <- format_lm_output_twotailed(Efficacy_Model_10_robust, Efficacy_Model_10_Stand)
+
+# Outputs:
+Efficacy_Model_10_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_10_Results$appendix_xtable, include.rownames = FALSE, longtable = TRUE) # Syntax for latex editor
+
+##
+
+# White
+
+Efficacy_Model_11 <- lm(efficacy ~ condition*race_bin, data = df)
+summary(Efficacy_Model_11)
+
+Efficacy_Model_11_robust <- coeftest(Efficacy_Model_11, vcov = vcovHC(Efficacy_Model_11, type = "HC3"))
+Efficacy_Model_11_robust
+
+Efficacy_Model_11_Stand <- lm(efficacy_c ~ condition*race_bin, data = zdf)
+summary(Efficacy_Model_11_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_11_Results <- format_lm_output_twotailed(Efficacy_Model_11_robust, Efficacy_Model_11_Stand)
+
+# Outputs:
+Efficacy_Model_11_Results$appendix 
+
+##
+
+# Non-White 
+
+Efficacy_Model_12 <- lm(efficacy ~ condition*race_bin_r, data = df)
+summary(Efficacy_Model_12)
+
+Efficacy_Model_12_robust <- coeftest(Efficacy_Model_12, vcov = vcovHC(Efficacy_Model_12, type = "HC3"))
+Efficacy_Model_12_robust
+
+Efficacy_Model_12_Stand <- lm(efficacy_c ~ condition*race_bin_r, data = zdf)
+summary(Efficacy_Model_12_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_12_Results <- format_lm_output_twotailed(Efficacy_Model_12_robust, Efficacy_Model_12_Stand)
+
+# Outputs:
+Efficacy_Model_12_Results$appendix 
+
+```
+
+```{r, Efficacy Interaction with Age Two-Tailed}
+
+# Condition*age
+Efficacy_Model_13 <- lm(efficacy_c ~ condition*age_c, data = zdf)
+summary(Efficacy_Model_13) 
+
+Efficacy_Model_13_robust <- coeftest(Efficacy_Model_13, vcov = vcovHC(Efficacy_Model_13, type = "HC3"))
+Efficacy_Model_13_robust
+
+Efficacy_Model_13_Stand <- lm(efficacy_c ~ condition*age_c, data = zdf)
+summary(Efficacy_Model_13_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_13_Results <- format_lm_output_twotailed(Efficacy_Model_13_robust, Efficacy_Model_13_Stand)
+
+# Outputs:
+Efficacy_Model_13_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_13_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+```{r, Efficacy Interaction with Income Two-Tailed}
+
+# Condition*income
+Efficacy_Model_14 <- lm(efficacy ~ condition*income_c, data = df)
+summary(Efficacy_Model_14) 
+
+Efficacy_Model_14_robust <- coeftest(Efficacy_Model_14, vcov = vcovHC(Efficacy_Model_14, type = "HC3"))
+Efficacy_Model_14_robust
+
+Efficacy_Model_14_Stand <- lm(efficacy_c ~ condition*income_c, data = zdf)
+summary(Efficacy_Model_14_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_14_Results <- format_lm_output_twotailed(Efficacy_Model_14_robust, Efficacy_Model_14_Stand)
+
+# Outputs:
+Efficacy_Model_14_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_14_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+```{r, Efficacy Interaction with Education Two-Tailed}
+
+# Condition*education
+Efficacy_Model_15 <- lm(efficacy ~ condition*edu_c, data = df)
+summary(Efficacy_Model_15) 
+
+Efficacy_Model_15_robust <- coeftest(Efficacy_Model_15, vcov = vcovHC(Efficacy_Model_15, type = "HC3"))
+Efficacy_Model_15_robust
+
+Efficacy_Model_15_Stand <- lm(efficacy_c ~ condition*edu_c, data = zdf)
+summary(Efficacy_Model_15_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_15_Results <- format_lm_output_twotailed(Efficacy_Model_15_robust, Efficacy_Model_15_Stand)
+
+# Outputs:
+Efficacy_Model_15_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_15_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Pre-Intention to Register 
+
+```{r, Feelings of Efficacy Interaction with Pre-Intention to Register Two-Tailed}
+
+# Fit the model
+Efficacy_Model_16 <- lm(efficacy ~ condition*pre_intention_c, data = df)
+summary(Efficacy_Model_16) 
+
+Efficacy_Model_16_robust <- coeftest(Efficacy_Model_16, vcov = vcovHC(Efficacy_Model_16, type = "HC3"))
+Efficacy_Model_16_robust
+
+Efficacy_Model_16_Stand <- lm(efficacy_c ~ condition*pre_intention_c, data = zdf)
+summary(Efficacy_Model_16_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_16_Results <- format_lm_output_twotailed(Efficacy_Model_16_robust, Efficacy_Model_16_Stand)
+
+# Outputs:
+Efficacy_Model_16_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_16_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+##
+
+# Low intention to register
+
+Efficacy_Model_17 <- lm(efficacy ~ condition*pre_intention_low, data = df)
+summary(Efficacy_Model_17) 
+
+Efficacy_Model_17_robust <- coeftest(Efficacy_Model_17, vcov = vcovHC(Efficacy_Model_17, type = "HC3"))
+Efficacy_Model_17_robust
+
+Efficacy_Model_17_Stand <- lm(efficacy_c ~ condition*pre_intention_low, data = zdf)
+summary(Efficacy_Model_17_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_17_Results <- format_lm_output_twotailed(Efficacy_Model_17_robust, Efficacy_Model_17_Stand)
+
+# Outputs:
+Efficacy_Model_17_Results$appendix   # Cleaned and formatted for LaTeX
+
+##
+
+# High intention to register
+
+Efficacy_Model_18 <- lm(efficacy ~ condition*pre_intention_high, data = df)
+summary(Efficacy_Model_18) 
+
+Efficacy_Model_18_robust <- coeftest(Efficacy_Model_18, vcov = vcovHC(Efficacy_Model_18, type = "HC3"))
+Efficacy_Model_18_robust
+
+Efficacy_Model_18_Stand <- lm(efficacy_c ~ condition*pre_intention_high, data = zdf)
+summary(Efficacy_Model_18_Stand) 
+
+# Use two tailed lm function to format
+Efficacy_Model_18_Results <- format_lm_output_twotailed(Efficacy_Model_18_robust, Efficacy_Model_18_Stand)
+
+# Outputs:
+Efficacy_Model_18_Results$appendix   # Cleaned and formatted for LaTeX
+
+```
+
+# Interest
+
+```{r, Feelings of Efficacy Interaction with Interest Two-Tailed}
+
+# Fit the model
+Efficacy_Model_19 <- lm(efficacy ~ condition*interest_c, data = df)
+summary(Efficacy_Model_19)
+
+Efficacy_Model_19_robust <- coeftest(Efficacy_Model_19, vcov = vcovHC(Efficacy_Model_19, type = "HC3"))
+Efficacy_Model_19_robust
+
+Efficacy_Model_19_Stand <- lm(efficacy_c ~ condition*interest_c, data = zdf)
+summary(Efficacy_Model_19_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_19_Results <- format_lm_output_twotailed(Efficacy_Model_19_robust, Efficacy_Model_19_Stand)
+
+# Outputs:
+Efficacy_Model_19_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_19_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Knowledge
+
+```{r, Feelings of Efficacy Interaction with Knowledge Two-Tailed}
+
+# Fit the model
+Efficacy_Model_20 <- lm(efficacy ~ condition*knowledge_c, data = df)
+summary(Efficacy_Model_20)
+
+Efficacy_Model_20_robust <- coeftest(Efficacy_Model_20, vcov = vcovHC(Efficacy_Model_20, type = "HC3"))
+Efficacy_Model_20_robust
+
+Efficacy_Model_20_Stand <- lm(efficacy_c ~ condition*knowledge_c, data = zdf)
+summary(Efficacy_Model_20_Stand)
+
+# Use two tailed lm function to format
+Efficacy_Model_20_Results <- format_lm_output_twotailed(Efficacy_Model_20_robust, Efficacy_Model_20_Stand)
+
+# Outputs:
+Efficacy_Model_20_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Efficacy_Model_20_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+#############################################################################################################
+############################################## Perceived Norms ############################################## 
+#############################################################################################################
+
+```{r, Voting Norms Two-Tailed}
+
+# Fit the model
+Norms_Model_1 <- lm(norms ~ condition, data = df)
+summary(Norms_Model_1)
+
+Norms_Model_1_robust <- coeftest(Norms_Model_1, vcov = vcovHC(Norms_Model_1, type = "HC3"))
+Norms_Model_1_robust
+
+Norms_Model_1_Stand <- lm(norms_c ~ condition, data = zdf)
+summary(Norms_Model_1_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_1_Results <- format_lm_output_twotailed(Norms_Model_1_robust, Norms_Model_1_Stand)
+
+# Outputs:
+Norms_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+# Plot percentages within each condition (do not use bs from function here)
+Norms_Model_1_Results_plot <- as.data.frame(emmeans(Norms_Model_1, ~ condition, level = 0.95)) %>%
+  rename(Condition = condition) %>%
+    mutate(
+    Mean = emmean,
+    Lower_ci = lower.CL,
+    Upper_ci = upper.CL
+  ) %>%
+dplyr::select(Condition, Mean, Lower_ci, Upper_ci) 
+
+rownames(Norms_Model_1_Results_plot) <- NULL
+
+Norms_Model_1_Results_plot
+
+# write.csv(Norms_Model_1_Results_plot, file = "Norms_Percent.csv")
+
+```
+
+# Mixed Model Accounting for Within-state Non-independence
+
+```{r, Norms MLM Robustness Check Two-Tailed}
+
+# Fit the model
+Norms_Model_2 <- lmer(norms ~ condition + (1 | state), data = df)
+summary(Norms_Model_2)
+
+Norms_Model_2_Stand <- lmer(norms_c ~ condition + (1 | state), data = zdf)
+summary(Norms_Model_2_Stand)
+
+# Use one tailed lm MLM function to format 
+Norms_Model_2_Results <- format_linear_mixed_output_twotailed(Norms_Model_2, Norms_Model_2_Stand)
+
+# Outputs:
+Norms_Model_2_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_2_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# With covariates
+
+```{r, Voting Norms with Covariates Two-Tailed}
+
+# Fit the model
+Norms_Model_3 <- lm(norms ~ condition + pre_intention_c + gend_e + Asian_E + Black_E + Latinx_E + ME_E + Native_E + Multiracial_E + Other_E + age_c + income_c + edu_c, data = df)
+summary(Norms_Model_3)
+
+Norms_Model_3_robust <- coeftest(Norms_Model_3, vcov = vcovHC(Norms_Model_3, type = "HC3"))
+Norms_Model_3_robust
+
+Norms_Model_3_Stand <- lm(norms_c ~ condition + pre_intention_c + gend_e + Asian_E + Black_E + Latinx_E + ME_E + Native_E + Multiracial_E + Other_E + age_c + income_c + edu_c, data = zdf)
+summary(Norms_Model_3_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_3_Results <- format_lm_output_twotailed(Norms_Model_3_robust, Norms_Model_3_Stand)
+
+# Outputs:
+Norms_Model_3_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_3_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+
+############# Norms Moderations (two-tailed)
+
+# Ideology
+
+```{r, Voting Norms Interaction with Ideology Two-Tailed}
+
+# Fit the model
+Norms_Model_4 <- lm(norms ~ condition*ide_c, data = df)
+summary(Norms_Model_4)
+
+Norms_Model_4_robust <- coeftest(Norms_Model_4, vcov = vcovHC(Norms_Model_4, type = "HC3"))
+Norms_Model_4_robust
+
+Norms_Model_4_Stand <- lm(norms_c ~ condition*ide_c, data = zdf)
+summary(Norms_Model_4_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_4_Results <- format_lm_output_twotailed(Norms_Model_4_robust, Norms_Model_4_Stand)
+
+# Outputs:
+Norms_Model_4_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_4_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+##
+
+# Liberals
+
+Norms_Model_5 <- lm(norms ~ condition*ide_low, data = df)
+summary(Norms_Model_5)
+
+Norms_Model_5_robust <- coeftest(Norms_Model_5, vcov = vcovHC(Norms_Model_5, type = "HC3"))
+Norms_Model_5_robust
+
+Norms_Model_5_Stand <- lm(norms_c ~ condition*ide_low, data = zdf)
+summary(Norms_Model_5_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_5_Results <- format_lm_output_twotailed(Norms_Model_5_robust, Norms_Model_5_Stand)
+
+# Outputs:
+Norms_Model_5_Results$appendix
+
+##
+
+# Conservatives
+
+Norms_Model_6 <- lm(norms ~ condition*ide_high, data = df)
+summary(Norms_Model_6)
+
+Norms_Model_6_robust <- coeftest(Norms_Model_6, vcov = vcovHC(Norms_Model_6, type = "HC3"))
+Norms_Model_6_robust
+
+Norms_Model_6_Stand <- lm(norms_c ~ condition*ide_high, data = zdf)
+summary(Norms_Model_6_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_6_Results <- format_lm_output_twotailed(Norms_Model_6_robust, Norms_Model_6_Stand)
+
+# Outputs:
+Norms_Model_6_Results$appendix 
+
+```
+
+# Demographics
+
+```{r, Norms Interaction with Gender Two-Tailed}
+
+# Test interaction with all demographics
+
+# Condition*gender
+Norms_Model_7 <- lm(norms ~ condition*gend_e, data = df)
+summary(Norms_Model_7) 
+
+Norms_Model_7_robust <- coeftest(Norms_Model_7, vcov = vcovHC(Norms_Model_7, type = "HC3"))
+Norms_Model_7_robust
+
+Norms_Model_7_Stand <- lm(norms_c ~ condition*gend_e, data = zdf)
+summary(Norms_Model_7_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_7_Results <- format_lm_output_twotailed(Norms_Model_7_robust, Norms_Model_7_Stand)
+
+# Outputs:
+Norms_Model_7_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_7_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+## 
+
+# Men
+
+Norms_Model_8 <- lm(norms ~ condition*gend_bin, data = df)
+summary(Norms_Model_8) 
+
+Norms_Model_8_robust <- coeftest(Norms_Model_8, vcov = vcovHC(Norms_Model_8, type = "HC3"))
+Norms_Model_8_robust
+
+Norms_Model_8_Stand <- lm(norms_c ~ condition*gend_bin, data = zdf)
+summary(Norms_Model_8_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_8_Results <- format_lm_output_twotailed(Norms_Model_8_robust, Norms_Model_8_Stand)
+
+# Outputs:
+Norms_Model_8_Results$appendix   # Cleaned and formatted for LaTeX
+
+## 
+
+# Women
+
+Norms_Model_9 <- lm(norms ~ condition*gend_bin_r, data = df)
+summary(Norms_Model_9) 
+
+Norms_Model_9_robust <- coeftest(Norms_Model_9, vcov = vcovHC(Norms_Model_9, type = "HC3"))
+Norms_Model_9_robust
+
+Norms_Model_9_Stand <- lm(norms_c ~ condition*gend_bin_r, data = zdf)
+summary(Norms_Model_9_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_9_Results <- format_lm_output_twotailed(Norms_Model_9_robust, Norms_Model_9_Stand)
+
+# Outputs:
+Norms_Model_9_Results$appendix   # Cleaned and formatted for LaTeX
+
+```
+
+```{r, Norms Interaction with Race Two-Tailed}
+
+# Condition*race
+Norms_Model_10 <- lm(norms ~ condition*race_bin_e, data = df)
+summary(Norms_Model_10)
+
+Norms_Model_10_robust <- coeftest(Norms_Model_10, vcov = vcovHC(Norms_Model_10, type = "HC3"))
+Norms_Model_10_robust
+
+Norms_Model_10_Stand <- lm(norms_c ~ condition*race_bin_e, data = zdf)
+summary(Norms_Model_10_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_10_Results <- format_lm_output_twotailed(Norms_Model_10_robust, Norms_Model_10_Stand)
+
+# Outputs:
+Norms_Model_10_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_10_Results$appendix_xtable, include.rownames = FALSE, longtable = TRUE) # Syntax for latex editor
+
+##
+
+# White
+
+Norms_Model_11 <- lm(norms ~ condition*race_bin, data = df)
+summary(Norms_Model_11)
+
+Norms_Model_11_robust <- coeftest(Norms_Model_11, vcov = vcovHC(Norms_Model_11, type = "HC3"))
+Norms_Model_11_robust
+
+Norms_Model_11_Stand <- lm(norms_c ~ condition*race_bin, data = zdf)
+summary(Norms_Model_11_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_11_Results <- format_lm_output_twotailed(Norms_Model_11_robust, Norms_Model_11_Stand)
+
+# Outputs:
+Norms_Model_11_Results$appendix   # Cleaned and formatted for LaTeX
+
+##
+
+# Non-white
+
+Norms_Model_12 <- lm(norms ~ condition*race_bin_r, data = df)
+summary(Norms_Model_12)
+
+Norms_Model_12_robust <- coeftest(Norms_Model_12, vcov = vcovHC(Norms_Model_12, type = "HC3"))
+Norms_Model_12_robust
+
+Norms_Model_12_Stand <- lm(norms_c ~ condition*race_bin_r, data = zdf)
+summary(Norms_Model_12_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_12_Results <- format_lm_output_twotailed(Norms_Model_12_robust, Norms_Model_12_Stand)
+
+# Outputs:
+Norms_Model_12_Results$appendix   # Cleaned and formatted for LaTeX
+
+```
+
+```{r, Norms Interaction with Age Two-Tailed}
+
+# Condition*age
+Norms_Model_13 <- lm(norms ~ condition*age_c, data = df)
+summary(Norms_Model_13) 
+
+Norms_Model_13_robust <- coeftest(Norms_Model_13, vcov = vcovHC(Norms_Model_13, type = "HC3"))
+Norms_Model_13_robust
+
+Norms_Model_13_Stand <- lm(norms_c ~ condition*age_c, data = zdf)
+summary(Norms_Model_13_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_13_Results <- format_lm_output_twotailed(Norms_Model_13_robust, Norms_Model_13_Stand)
+
+# Outputs:
+Norms_Model_13_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_13_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+```{r, Norms Interaction with Income Two-Tailed}
+
+# Condition*income
+Norms_Model_14 <- lm(norms ~ condition*income_c, data = df)
+summary(Norms_Model_14) 
+
+Norms_Model_14_robust <- coeftest(Norms_Model_14, vcov = vcovHC(Norms_Model_14, type = "HC3"))
+Norms_Model_14_robust
+
+Norms_Model_14_Stand <- lm(norms_c ~ condition*income_c, data = zdf)
+summary(Norms_Model_14_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_14_Results <- format_lm_output_twotailed(Norms_Model_14_robust, Norms_Model_14_Stand)
+
+# Outputs:
+Norms_Model_14_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_14_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+```{r, Norms Interaction with Education Two-Tailed}
+
+# Condition*education
+Norms_Model_15 <- lm(norms ~ condition*edu_c, data = df)
+summary(Norms_Model_15) 
+
+Norms_Model_15_robust <- coeftest(Norms_Model_15, vcov = vcovHC(Norms_Model_15, type = "HC3"))
+Norms_Model_15_robust
+
+Norms_Model_15_Stand <- lm(norms_c ~ condition*edu_c, data = zdf)
+summary(Norms_Model_15_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_15_Results <- format_lm_output_twotailed(Norms_Model_15_robust, Norms_Model_15_Stand)
+
+# Outputs:
+Norms_Model_15_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_15_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Pre-Intention to Register 
+
+```{r, Voting Norms Interaction with Pre-Intention to Register Two-Tailed}
+
+# Fit the model
+Norms_Model_16 <- lm(norms ~ condition*pre_intention_c, data = df)
+summary(Norms_Model_16) 
+
+Norms_Model_16_robust <- coeftest(Norms_Model_16, vcov = vcovHC(Norms_Model_16, type = "HC3"))
+Norms_Model_16_robust
+
+Norms_Model_16_Stand <- lm(norms_c ~ condition*pre_intention_c, data = zdf)
+summary(Norms_Model_16_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_16_Results <- format_lm_output_twotailed(Norms_Model_16_robust, Norms_Model_16_Stand)
+
+# Outputs:
+Norms_Model_16_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_16_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+##
+
+# Low intention to register
+
+Norms_Model_17 <- lm(norms ~ condition*pre_intention_low, data = df)
+summary(Norms_Model_17) 
+
+Norms_Model_17_robust <- coeftest(Norms_Model_17, vcov = vcovHC(Norms_Model_17, type = "HC3"))
+Norms_Model_17_robust
+
+Norms_Model_17_Stand <- lm(norms_c ~ condition*pre_intention_low, data = zdf)
+summary(Norms_Model_17_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_17_Results <- format_lm_output_twotailed(Norms_Model_17_robust, Norms_Model_17_Stand)
+
+# Outputs:
+Norms_Model_17_Results$appendix   # Cleaned and formatted for LaTeX
+
+##
+
+# High intention to register
+
+Norms_Model_18 <- lm(norms ~ condition*pre_intention_high, data = df)
+summary(Norms_Model_18) 
+
+Norms_Model_18_robust <- coeftest(Norms_Model_18, vcov = vcovHC(Norms_Model_18, type = "HC3"))
+Norms_Model_18_robust
+
+Norms_Model_18_Stand <- lm(norms_c ~ condition*pre_intention_high, data = zdf)
+summary(Norms_Model_18_Stand) 
+
+# Use two tailed lm function to format
+Norms_Model_18_Results <- format_lm_output_twotailed(Norms_Model_18_robust, Norms_Model_18_Stand)
+
+# Outputs:
+Norms_Model_18_Results$appendix   # Cleaned and formatted for LaTeX
+
+```
+
+# Interest
+
+```{r, Voting Norms Interaction with Interest Two-Tailed}
+
+# Fit the model
+Norms_Model_19 <- lm(norms ~ condition*interest_c, data = df)
+summary(Norms_Model_19)
+
+Norms_Model_19_robust <- coeftest(Norms_Model_19, vcov = vcovHC(Norms_Model_19, type = "HC3"))
+Norms_Model_19_robust
+
+Norms_Model_19_Stand <- lm(norms_c ~ condition*interest_c, data = zdf)
+summary(Norms_Model_19_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_19_Results <- format_lm_output_twotailed(Norms_Model_19_robust, Norms_Model_19_Stand)
+
+# Outputs:
+Norms_Model_19_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_19_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+# Knowledge
+
+```{r, Voting Norms Interaction with Knowledge Two-Tailed}
+
+# Fit the model
+Norms_Model_20 <- lm(norms ~ condition*knowledge_c, data = df)
+summary(Norms_Model_20)
+
+Norms_Model_20_robust <- coeftest(Norms_Model_20, vcov = vcovHC(Norms_Model_20, type = "HC3"))
+Norms_Model_20_robust
+
+Norms_Model_20_Stand <- lm(norms_c ~ condition*knowledge_c, data = zdf)
+summary(Norms_Model_20_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_20_robust_Results <- format_lm_output_twotailed(Norms_Model_20_robust, Norms_Model_20_Stand)
+
+# Outputs:
+Norms_Model_20_robust_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Norms_Model_20_robust_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+##
+
+# Low knowledge 
+
+Norms_Model_21 <- lm(norms ~ condition*knowledge_low, data = df)
+summary(Norms_Model_21)
+
+Norms_Model_21_robust <- coeftest(Norms_Model_21, vcov = vcovHC(Norms_Model_21, type = "HC3"))
+Norms_Model_21_robust
+
+Norms_Model_21_Stand <- lm(norms_c ~ condition*knowledge_low, data = zdf)
+summary(Norms_Model_21_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_21_robust_Results <- format_lm_output_twotailed(Norms_Model_21_robust, Norms_Model_21_Stand)
+
+# Outputs:
+Norms_Model_21_robust_Results$appendix   # Cleaned and formatted for LaTeX
+
+##
+
+# High knowledge 
+
+Norms_Model_22 <- lm(norms ~ condition*knowledge_high, data = df)
+summary(Norms_Model_22)
+
+Norms_Model_22_robust <- coeftest(Norms_Model_22, vcov = vcovHC(Norms_Model_22, type = "HC3"))
+Norms_Model_22_robust
+
+Norms_Model_22_Stand <- lm(norms_c ~ condition*knowledge_high, data = zdf)
+summary(Norms_Model_22_Stand)
+
+# Use two tailed lm function to format
+Norms_Model_22_robust_Results <- format_lm_output_twotailed(Norms_Model_22_robust, Norms_Model_22_Stand)
+
+# Outputs:
+Norms_Model_22_robust_Results$appendix   # Cleaned and formatted for LaTeX
+
+```
+
+
+################################################ BH Additional Variables 
+
+```{r, BH Adjustments}
+
+# Pull p-values
+pvals_trust <- TrustAgg_Model_1_Results$full$p[2:11]
+pvals_efficacy <- Efficacy_Model_1_Results$full$p[2:11]
+pvals_norms <- Norms_Model_1_Results$full$p[2:11]
+
+# Combine p-values and apply BH correction
+all_condition_pvals <- c(pvals_trust, pvals_efficacy, pvals_norms)
+adjusted_pvals <- p.adjust(all_condition_pvals, method = "BH")
+
+# Split again
+adj_trust <- adjusted_pvals[1:10] 
+adj_efficacy  <- adjusted_pvals[11:20]
+adj_norms  <- adjusted_pvals[21:30]
+
+# Reassign to each model and print for appendix
+
+# Trust 
+TrustAgg_Model_1_Results$full$p_BH <- NA
+TrustAgg_Model_1_Results$full$p_BH[2:11] <- adj_trust
+
+TrustAgg_Model_1_Results$appendix$p_BH <- NA
+TrustAgg_Model_1_Results$appendix$p_BH[2:11] <- adj_trust
+
+TrustAgg_Model_1_Results$appendix <- TrustAgg_Model_1_Results$appendix %>%
+   mutate(p_BH = ifelse(p_BH < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_BH))))
+
+TrustAgg_Model_1_Results$appendix 
+
+align_spec <- c("l", "l", "r", "r", "r", "r", "r", "r", "r", "r")
+  
+TrustAgg_Model_1_Results_xtable <- xtable(TrustAgg_Model_1_Results$appendix, align = align_spec, booktabs = T)
+
+colnames(TrustAgg_Model_1_Results_xtable)[colnames(TrustAgg_Model_1_Results_xtable) == "p_BH"] <- "p (BH)"
+  
+# Print appendix
+print.xtable(TrustAgg_Model_1_Results_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+##
+
+# Efficacy
+Efficacy_Model_1_Results$full$p_BH <- NA
+Efficacy_Model_1_Results$full$p_BH[2:11] <- adj_efficacy
+
+Efficacy_Model_1_Results$appendix$p_BH <- NA
+Efficacy_Model_1_Results$appendix$p_BH[2:11] <- adj_efficacy
+
+Efficacy_Model_1_Results$appendix <- Efficacy_Model_1_Results$appendix %>%
+   mutate(p_BH = ifelse(p_BH < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_BH))))
+
+Efficacy_Model_1_Results$appendix
+
+align_spec <- c("l", "l", "r", "r", "r", "r", "r", "r", "r", "r")
+
+Efficacy_Model_1_Results_xtable <- xtable(Efficacy_Model_1_Results$appendix, align = align_spec, booktabs = T)
+
+colnames(Efficacy_Model_1_Results_xtable)[colnames(Efficacy_Model_1_Results_xtable) == "p_BH"] <- "p (BH)"
+  
+# Print appendix
+print.xtable(Efficacy_Model_1_Results_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+##
+
+# Norms
+Norms_Model_1_Results$full$p_BH <- NA
+Norms_Model_1_Results$full$p_BH[2:11] <- adj_norms
+
+Norms_Model_1_Results$appendix$p_BH <- NA
+Norms_Model_1_Results$appendix$p_BH[2:11] <- adj_norms
+
+Norms_Model_1_Results$appendix <- Norms_Model_1_Results$appendix %>%
+   mutate(p_BH = ifelse(p_BH < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_BH))))
+
+Norms_Model_1_Results$appendix
+
+align_spec <- c("l", "l", "r", "r", "r", "r", "r", "r", "r", "r")
+  
+Norms_Model_1_Results_xtable <- xtable(Norms_Model_1_Results$appendix, align = align_spec, booktabs = T)
+
+colnames(Norms_Model_1_Results_xtable)[colnames(Norms_Model_1_Results_xtable) == "p_BH"] <- "p (BH)"
+  
+# Print appendix
+print.xtable(Norms_Model_1_Results_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+```
+
+```{r, BH Adjustments Covariates}
+
+# Pull p-values
+pvals_trust <- TrustAgg_Model_3_Results$full$p[2:11]
+pvals_efficacy <- Efficacy_Model_3_Results$full$p[2:11]
+pvals_norms <- Norms_Model_3_Results$full$p[2:11]
+
+# Combine p-values and apply BH correction
+all_condition_pvals <- c(pvals_trust, pvals_efficacy, pvals_norms)
+adjusted_pvals <- p.adjust(all_condition_pvals, method = "BH")
+
+# Split again
+adj_trust <- adjusted_pvals[1:10] 
+adj_efficacy  <- adjusted_pvals[11:20]
+adj_norms  <- adjusted_pvals[21:30]
+
+# Reassign to each model and print for appendix
+
+# Trust 
+TrustAgg_Model_3_Results$full$p_BH <- NA
+TrustAgg_Model_3_Results$full$p_BH[2:11] <- adj_trust
+
+TrustAgg_Model_3_Results$appendix$p_BH <- NA
+TrustAgg_Model_3_Results$appendix$p_BH[2:11] <- adj_trust
+
+TrustAgg_Model_3_Results$appendix <- TrustAgg_Model_3_Results$appendix %>%
+   mutate(p_BH = ifelse(p_BH < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_BH))))
+
+TrustAgg_Model_3_Results$appendix 
+
+align_spec <- c("l", "l", "r", "r", "r", "r", "r", "r", "r", "r")
+  
+TrustAgg_Model_3_Results_xtable <- xtable(TrustAgg_Model_3_Results$appendix, align = align_spec, booktabs = T)
+
+colnames(TrustAgg_Model_3_Results_xtable)[colnames(TrustAgg_Model_3_Results_xtable) == "p_BH"] <- "p (BH)"
+  
+# Print appendix
+print.xtable(TrustAgg_Model_3_Results_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+##
+
+# Efficacy
+Efficacy_Model_3_Results$full$p_BH <- NA
+Efficacy_Model_3_Results$full$p_BH[2:11] <- adj_efficacy
+
+Efficacy_Model_3_Results$appendix$p_BH <- NA
+Efficacy_Model_3_Results$appendix$p_BH[2:11] <- adj_efficacy
+
+Efficacy_Model_3_Results$appendix <- Efficacy_Model_3_Results$appendix %>%
+   mutate(p_BH = ifelse(p_BH < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_BH))))
+
+Efficacy_Model_3_Results$appendix
+
+align_spec <- c("l", "l", "r", "r", "r", "r", "r", "r", "r", "r")
+
+Efficacy_Model_3_Results_xtable <- xtable(Efficacy_Model_3_Results$appendix, align = align_spec, booktabs = T)
+
+colnames(Efficacy_Model_3_Results_xtable)[colnames(Efficacy_Model_3_Results_xtable) == "p_BH"] <- "p (BH)"
+  
+# Print appendix
+print.xtable(Efficacy_Model_3_Results_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+##
+
+# Norms
+Norms_Model_3_Results$full$p_BH <- NA
+Norms_Model_3_Results$full$p_BH[2:11] <- adj_norms
+
+Norms_Model_3_Results$appendix$p_BH <- NA
+Norms_Model_3_Results$appendix$p_BH[2:11] <- adj_norms
+
+Norms_Model_3_Results$appendix <- Norms_Model_3_Results$appendix %>%
+   mutate(p_BH = ifelse(p_BH < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_BH))))
+
+Norms_Model_3_Results$appendix
+
+align_spec <- c("l", "l", "r", "r", "r", "r", "r", "r", "r", "r")
+  
+Norms_Model_3_Results_xtable <- xtable(Norms_Model_3_Results$appendix, align = align_spec, booktabs = T)
+
+colnames(Norms_Model_3_Results_xtable)[colnames(Norms_Model_3_Results_xtable) == "p_BH"] <- "p (BH)"
+  
+# Print appendix
+print.xtable(Norms_Model_3_Results_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+```
+
