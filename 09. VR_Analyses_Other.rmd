@@ -1,0 +1,550 @@
+---
+title: "VR Analyses - Supplementary Analyses"
+author: "Katherine Mason"
+date: "2025-08-31"
+output: html_document
+---
+
+###################################################### Prepare Data
+
+```{r, Load Packages}
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(psych)
+library(ltm)
+library(Hmisc)
+library(reticulate)
+library(nlme)
+library(ordinal)
+library(carData)
+library(car)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(clubSandwich)
+library(sandwich)
+library(CR2)
+library(lsmeans)
+library(stats)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(glmmTMB) 
+library(MASS)
+library(broom) 
+library(knitr)
+library(tools)
+library(sjstats)
+library(effectsize)
+library(pscl)
+library(logistf)
+library(lavaan)
+library(kableExtra)
+library(boot)
+library(margins)
+library(purrr)
+library(xtable)
+library(gt) 
+library(weights)
+library(mediation)
+library(QuantPsyc)
+library(lm.beta)
+library(parameters)
+library(esc)
+library(corrplot)
+library(ivreg)
+library(rstatix)
+
+# For intervention text
+library(quanteda)
+library(quanteda.textstats)
+library(tibble)
+library(stargazer)
+
+```
+
+```{r, Load and Prepare Data}
+
+df <- read.csv("Voter_Reg_STRICT.csv") # Or '03. VR_Simulated_Data.csv' if using simulated data
+head(df)
+
+nrow(df) # 12896
+
+zdf <- read.csv("Voter_Reg_STRICT_STANDARDIZED.csv") # Or '04. VR_Simulated_Data_Standard.csv' if using simulated data
+head(zdf)
+
+nrow(zdf)
+
+## Prepare variables ##
+
+# Set reference level as the control condition
+df$condition <- relevel(as.factor(df$condition), ref = "ControlCondition")
+
+zdf$condition <- relevel(as.factor(zdf$condition), ref = "ControlCondition")
+
+# Make sure link click, register, and vote variables are factors for regressions
+df$linkClicked <- as.factor(df$linkClicked)
+df$register <- as.factor(df$register)
+df$vote <- as.factor(df$vote)
+
+```
+
+###### Effect size correlations
+
+```{r, Effect Size Correlations - All DVs}
+
+# Correlate effect sizes between DVs
+
+conditions <- c("Correcting Misperceptions", "Distrust Salience", "Dynamic Norms", "Escalating Commitment",
+                "Implementation Intentions", "Interdependent Construal", "Moral Reasons", "Personal Importance", 
+                "Self-Generated Norms", "System Justification")
+
+# Function to clean up results 
+clean_results <- function(df, outcome_name) {
+  df %>%
+    mutate(
+      Variable = str_trim(Variable),
+      d = as.numeric(d) # Make sure standardized d numeric 
+    ) %>%
+    filter(Variable %in% conditions) %>% # Only keep conditions
+    transmute(Intervention = Variable,
+              Outcome = outcome_name,
+              d)
+}
+
+# Apply to each table (tables from 6. VR_Analyses_Primary_DVs)
+intent_tbl <- clean_results(Intentions_Model_1_Results$appendix, "Intentions")
+Intentions_Model_1_Results$appendix
+intent_tbl
+
+link_tbl <- clean_results(Link_Model_1_Results$appendix, "Link")
+Link_Model_1_Results$appendix
+link_tbl 
+
+reg_tbl <- clean_results(Registration_Model_1_Results$appendix,"Registration")
+Registration_Model_1_Results$appendix
+reg_tbl
+
+vote_tbl <- clean_results(Vote_Model_1_Results$appendix,"Voting")
+Vote_Model_1_Results$appendix
+vote_tbl
+
+trust_tbl <- clean_results(TrustAgg_Model_1_Results$appendix,"Trust")
+TrustAgg_Model_1_Results$appendix
+trust_tbl
+
+efficacy_tbl <- clean_results(Efficacy_Model_1_Results$appendix,"Efficacy")
+Efficacy_Model_1_Results$appendix
+efficacy_tbl
+
+norms_tbl <- clean_results(Norms_Model_1_Results$appendix,"Norms")
+Norms_Model_1_Results$appendix
+norms_tbl
+
+# Merge results 
+all_ds <- bind_rows(intent_tbl, link_tbl, reg_tbl, vote_tbl, trust_tbl, efficacy_tbl, norms_tbl) # Long format
+
+# Make wide 
+all_ds_wide <- all_ds %>%
+  pivot_wider(names_from = Outcome, values_from = d)
+
+all_ds_wide
+
+# Correlation matrix
+d_mat <- all_ds_wide %>%  # Create data frame with just numbers 
+  dplyr::select(-Intervention) %>% 
+  as.data.frame()
+
+cor_mat  <- cor(d_mat, use = "pairwise.complete.obs")
+p_mat <- cor_pmat(d_mat)
+
+# Blank upper triangle 
+cor_mat[upper.tri(cor_mat)] <- NA
+p_mat[upper.tri(p_mat)] <- NA
+
+# Significance stars
+get_stars <- function(p) {
+  ifelse(is.na(p), "", 
+         ifelse(p < 0.001, "***", 
+         ifelse(p < 0.01, "**", 
+         ifelse(p < 0.05, "*", ""))))
+}
+
+# Format correlations (round, remove leading 0s, add stars)
+formatted_cor <- matrix("", nrow = nrow(cor_mat), ncol = ncol(cor_mat),
+                        dimnames = dimnames(cor_mat))
+
+for (i in 1:nrow(cor_mat)) {
+  for (j in 1:ncol(cor_mat)) {
+    val <- cor_mat[i, j]
+    if (!is.na(val)) {
+      stars <- get_stars(p_mat[i, j])
+      val_fmt <- sprintf("%.2f", val)
+      val_fmt <- sub("^-0\\.", "-.", val_fmt)   # remove leading 0 
+      val_fmt <- sub("^0\\.", ".", val_fmt)     
+      formatted_cor[i, j] <- paste0(val_fmt, stars)
+    }
+  }
+}
+
+formatted_cor
+
+# Visualize 
+pdf(
+  "EffectSizeCorrs.pdf",
+  width = 7,
+  height = 7,
+  version = "1.4",
+  useDingbats = FALSE
+)
+
+corrplot(
+  cor_mat,
+  method = "circle",
+  type = "lower",
+  addCoef.col = "black",
+  title = "Effect Size Correlations Across All Dependent Measures",
+  mar = c(0, 0, 1, 0),
+  number.cex = 0.8,
+  number.digits = 2
+)
+
+dev.off()
+
+```
+
+###### Candidate Preference
+
+```{r, Candidate Preference With Covariates Two-Tailed}
+
+# Filter dataset to include only those who would vote
+df_candidate <- df %>% 
+  mutate(vote_today = as.character(vote_today)) %>%
+  filter(vote_today %in% c("Donald Trump", "Kamala Harris"))
+
+nrow(df_candidate) # 8403
+
+zdf_candidate <- zdf %>% 
+  mutate(vote_today = as.character(vote_today)) %>%
+  filter(vote_today %in% c("Donald Trump", "Kamala Harris"))
+
+nrow(zdf_candidate) # 8403
+
+# Make sure the reference level is set to the control condition
+df_candidate$condition <- relevel(as.factor(df_candidate$condition), ref = "ControlCondition")
+table(df_candidate$condition)
+
+zdf_candidate$condition <- relevel(as.factor(zdf_candidate$condition), ref = "ControlCondition")
+table(zdf_candidate$condition)
+
+# Fit the model
+Preference_Model_1 <- lm(vote_today_bin ~ condition, data = df_candidate)
+summary(Preference_Model_1)
+
+Preference_Model_1_robust <- coeftest(Preference_Model_1, vcov = vcovHC(Preference_Model_1, type = "HC3"))
+Preference_Model_1_robust
+
+Preference_Model_1_Stand <- lm(vote_today_bin ~ condition, data = zdf_candidate)
+summary(Preference_Model_1_Stand)
+
+# Use two tailed lm function to format
+Preference_Model_1_Results <- format_lm_output_twotailed(Preference_Model_1_robust, Preference_Model_1_Stand)
+
+# Outputs:
+Preference_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Preference_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+###### Readability + Word Length
+
+```{r, Build a corpus and compute readability}
+
+# Read in intervention text
+Interventions <- read.xlsx("InterventionTEXT.xlsx")
+
+# Edit slightly for merging
+Interventions <- Interventions %>%
+  rename(Intervention = condition) %>%
+  mutate(
+    Intervention = dplyr::recode(Intervention, !!!variable_labels) # Use variable labels
+  )
+
+view(Interventions)
+
+# Add word count
+Interventions <- Interventions %>%
+  mutate(word_count = stringr::str_count(text, "\\S+"))
+
+# Build a corpus (docnames = intervention labels)
+corp <- corpus(Interventions$text, docnames = Interventions$Intervention)
+
+# 3) Compute readability metrics
+# - "Flesch" is Reading Ease (higher = easier)
+# - "Flesch.Kincaid" is grade level (higher = harder)
+read_df <- textstat_readability(
+  corp,
+  measure = c("Flesch", "Flesch.Kincaid")
+) %>%
+  as_tibble() %>%
+  rename(
+    Intervention = document,
+    flesch_reading_ease = Flesch,
+    flesch_kincaid_grade = Flesch.Kincaid
+  ) %>%
+  left_join(Interventions %>% dplyr::select(Intervention, word_count), by = "Intervention") %>%
+  arrange(Intervention)
+
+# Round (only for latex table)
+# read_df$flesch_reading_ease<-clean_round(read_df$flesch_reading_ease)
+# read_df$flesch_kincaid_grade<-clean_round(read_df$flesch_kincaid_grade)
+
+view(read_df)
+
+# LateX
+align_spec <- c("l","l","r", "r", "r")
+read_df_xtable <- xtable(read_df, align = align_spec, booktabs = T)
+colnames(read_df_xtable)[colnames(read_df_xtable) == "flesch_reading_ease"] <- "Flesch Reading Ease"
+colnames(read_df_xtable)[colnames(read_df_xtable) == "flesch_kincaid_grade"] <- "Flesch Kincaid Grade"
+colnames(read_df_xtable)[colnames(read_df_xtable) == "word_count"] <- "Word Count"
+  
+# Print appendix
+print.xtable(read_df_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+# Range (without control)
+read_df %>%
+  filter(Intervention != "Control Condition") %>%
+  pull(flesch_kincaid_grade) %>%
+  round(2) %>%
+  range()
+# 5.72-11.99
+
+# Median (without control)
+read_df %>%
+  filter(Intervention != "Control Condition") %>%
+  pull(flesch_kincaid_grade) %>%
+  median() %>%
+  round(2)
+# 9.47
+
+```
+
+```{r, Merge ds with readability and word count}
+
+# Merge effect sizes with readability scores
+# Tibbles created for effect size corrs in file #7 - Primary DVs and #8 - Psych DVs
+
+# Intentions
+read_intentds_df <- intent_tbl %>%
+  left_join(read_df, by = "Intervention")
+read_intentds_df
+
+# Link clicks
+read_linkclickds_df <- link_tbl %>%
+  left_join(read_df, by = "Intervention")
+read_linkclickds_df
+
+# Registration
+read_regds_df <- reg_tbl %>%
+  left_join(read_df, by = "Intervention")
+read_regds_df
+
+# Voting 
+read_voteds_df <- vote_tbl %>%
+  left_join(read_df, by = "Intervention")
+read_voteds_df
+
+# Trust
+read_trustds_df <- trust_tbl %>%
+  left_join(read_df, by = "Intervention")
+read_trustds_df
+
+# Efficacy
+read_efficacyds_df <- efficacy_tbl %>%
+  left_join(read_df, by = "Intervention")
+read_efficacyds_df
+
+# Norms
+read_normsds_df <- norms_tbl %>%
+  left_join(read_df, by = "Intervention")
+read_normsds_df
+
+```
+
+```{r, Readability predicting effect size}
+
+# Regressions
+
+options(scipen = 999) # To show full #s
+
+# Intentions
+
+# Flesch Reading Ease - intentions 
+ReadEase_Intentions <- lm(d ~ flesch_reading_ease + word_count, data = read_intentds_df)
+summary(ReadEase_Intentions)
+# NS
+
+# Flesch Kincaid Grade - intentions
+ReadGrade_Intentions <- lm(d ~ flesch_kincaid_grade + word_count, data = read_intentds_df)
+summary(ReadGrade_Intentions)
+# Sig - as get harder, become more effective
+
+##
+
+# Link clicks
+
+# Flesch Reading Ease - link clicks 
+ReadEase_LinkClicks <- lm(d ~ flesch_reading_ease + word_count, data = read_linkclickds_df)
+summary(ReadEase_LinkClicks)
+# NS
+
+# Flesch Kincaid Grade - link clicks 
+ReadGrade_LinkClicks <- lm(d ~ flesch_kincaid_grade + word_count, data = read_linkclickds_df)
+summary(ReadGrade_LinkClicks)
+# NS
+
+##
+
+# Registration
+
+# Flesch Reading Ease - registration
+ReadEase_Registration <- lm(d ~ flesch_reading_ease + word_count, data = read_regds_df)
+summary(ReadEase_Registration)
+# NS
+
+# Flesch Kincaid Grade - registration
+ReadGrade_Registration <- lm(d ~ flesch_kincaid_grade + word_count, data = read_regds_df)
+summary(ReadGrade_Registration)
+# NS
+
+##
+
+# Voting 
+
+# Flesch Reading Ease - voting
+ReadEase_Vote <- lm(d ~ flesch_reading_ease + word_count, data = read_voteds_df)
+summary(ReadEase_Vote)
+# NS
+
+# Flesch Kincaid Grade - voting
+ReadGrade_Vote <- lm(d ~ flesch_kincaid_grade + word_count, data = read_voteds_df)
+summary(ReadGrade_Vote)
+# NS
+
+##
+
+# Trust
+
+# Flesch Reading Ease - trust
+ReadEase_Trust <- lm(d ~ flesch_reading_ease + word_count, data = read_trustds_df)
+summary(ReadEase_Trust)
+# NS
+
+# Flesch Kincaid Grade - trust
+ReadGrade_Trust <- lm(d ~ flesch_kincaid_grade + word_count, data = read_trustds_df)
+summary(ReadGrade_Trust)
+# NS
+
+##
+
+# Efficacy
+
+# Flesch Reading Ease - efficacy
+ReadEase_Efficacy <- lm(d ~ flesch_reading_ease + word_count, data = read_efficacyds_df)
+summary(ReadEase_Efficacy)
+# NS
+
+# Flesch Kincaid Grade - efficacy
+ReadGrade_Efficacy <- lm(d ~ flesch_kincaid_grade + word_count, data = read_efficacyds_df)
+summary(ReadGrade_Efficacy)
+# NS
+
+##
+
+# Norms
+
+# Flesch Reading Ease - norms
+ReadEase_Norms <- lm(d ~ flesch_reading_ease + word_count, data = read_normsds_df)
+summary(ReadEase_Norms)
+# NS
+
+# Flesch Kincaid Grade - norms
+ReadGrade_Norms <- lm(d ~ flesch_kincaid_grade + word_count, data = read_normsds_df)
+summary(ReadGrade_Norms)
+# NS
+
+
+# Function to get results from models
+extract_coefs <- function(model, var_name) {
+  s <- summary(model)
+  coefs <- s$coefficients
+  
+  b <- coefs[var_name, "Estimate"]
+  se <- coefs[var_name, "Std. Error"]
+  p <- coefs[var_name, "Pr(>|t|)"]
+  
+  star <- ifelse(p < .001, "***",
+           ifelse(p < .01, "**",
+           ifelse(p < .05, "*", "")))
+  
+  paste0(clean_round(b), " (", clean_round(se), ")", star)
+}
+
+
+# Build table
+readability_table <- data.frame(
+  Outcome = c("Intentions", "Link Clicks", "Registration", "Voting", "Trust", "Efficacy", "Norms"),
+  
+  # Ease models
+  Ease_Readability = c(
+    extract_coefs(ReadEase_Intentions, "flesch_reading_ease"),
+    extract_coefs(ReadEase_LinkClicks, "flesch_reading_ease"),
+    extract_coefs(ReadEase_Registration, "flesch_reading_ease"),
+    extract_coefs(ReadEase_Vote, "flesch_reading_ease"),
+    extract_coefs(ReadEase_Trust, "flesch_reading_ease"),
+    extract_coefs(ReadEase_Efficacy, "flesch_reading_ease"),
+    extract_coefs(ReadEase_Norms, "flesch_reading_ease")
+  ),
+  
+  Ease_WordCount = c(
+    extract_coefs(ReadEase_Intentions, "word_count"),
+    extract_coefs(ReadEase_LinkClicks, "word_count"),
+    extract_coefs(ReadEase_Registration, "word_count"),
+    extract_coefs(ReadEase_Vote, "word_count"),
+    extract_coefs(ReadEase_Trust, "word_count"),
+    extract_coefs(ReadEase_Efficacy, "word_count"),
+    extract_coefs(ReadEase_Norms, "word_count")
+  ),
+  
+  # Grade models
+  Grade_Readability = c(
+    extract_coefs(ReadGrade_Intentions, "flesch_kincaid_grade"),
+    extract_coefs(ReadGrade_LinkClicks, "flesch_kincaid_grade"),
+    extract_coefs(ReadGrade_Registration, "flesch_kincaid_grade"),
+    extract_coefs(ReadGrade_Vote, "flesch_kincaid_grade"),
+    extract_coefs(ReadGrade_Trust, "flesch_kincaid_grade"),
+    extract_coefs(ReadGrade_Efficacy, "flesch_kincaid_grade"),
+    extract_coefs(ReadGrade_Norms, "flesch_kincaid_grade")
+  ),
+  
+  Grade_WordCount = c(
+    extract_coefs(ReadGrade_Intentions, "word_count"),
+    extract_coefs(ReadGrade_LinkClicks, "word_count"),
+    extract_coefs(ReadGrade_Registration, "word_count"),
+    extract_coefs(ReadGrade_Vote, "word_count"),
+    extract_coefs(ReadGrade_Trust, "word_count"),
+    extract_coefs(ReadGrade_Efficacy, "word_count"),
+    extract_coefs(ReadGrade_Norms, "word_count")
+  )
+)
+
+view(readability_table)
+
+xtable(readability_table)
+
+```
+

@@ -1,0 +1,1133 @@
+---
+title: "Voter Registration Mediations"
+author: "Katherine Mason"
+date: "2025-08-31"
+output: html_document
+---
+
+####################################### Prepare Data ####################################### 
+
+```{r, Load Packages}
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(psych)
+library(ltm)
+library(Hmisc)
+library(reticulate)
+library(nlme)
+library(ordinal)
+library(carData)
+library(car)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(clubSandwich)
+library(sandwich)
+library(CR2)
+library(lsmeans)
+library(stats)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(glmmTMB) 
+library(MASS)
+library(broom) 
+library(knitr)
+library(tools)
+library(sjstats)
+library(effectsize)
+library(pscl)
+library(logistf)
+library(lavaan)
+library(kableExtra)
+library(boot)
+library(margins)
+library(purrr)
+library(xtable)
+library(gt) 
+library(weights)
+library(mediation)
+library(QuantPsyc)
+library(lm.beta)
+library(parameters)
+library(esc)
+library(corrplot)
+library(ivreg)
+library(estimatr)
+
+```
+
+```{r, Load and Prepare Data}
+
+df <- read.csv("Voter_Reg_STRICT.csv") # Or '03. VR_Simulated_Data.csv' if using simulated data
+head(df)
+
+nrow(df) # 12927
+
+zdf <- read.csv("Voter_Reg_STRICT_STANDARDIZED.csv") # Or '04. VR_Simulated_Data_Standard.csv' if using simulated data
+head(zdf)
+
+nrow(zdf)
+
+## Prepare variables ##
+
+# Set reference level as the control conditon
+df$condition <- relevel(as.factor(df$condition), ref = "ControlCondition")
+
+zdf$condition <- relevel(as.factor(zdf$condition), ref = "ControlCondition")
+
+# Make sure link click, register, and vote variables are factors for regressions
+df$linkClicked <- as.factor(df$linkClicked)
+df$register <- as.factor(df$register)
+df$vote <- as.factor(df$vote)
+
+# Set seed for replication
+set.seed(1234)
+
+```
+
+##################################################################################################
+######################## Parallel Mediations - Trust, Efficacy, and Norms ########################  
+##################################################################################################
+
+# Voting Intentions
+
+```{r, Parallel Medation Voting Intentions}
+
+# Only use complete data
+df_med <- df %>%
+  dplyr::select(voteInt, condition, trust_agg_c, efficacy_c, 
+                norms_c) %>%
+  na.omit()
+
+# Specify each path
+
+# Mediator model trust
+med_model_trust <- lm(trust_agg_c ~ condition, data = df_med)
+summary(med_model_trust)
+
+# Mediator model efficacy
+med_model_efficacy <- lm(efficacy_c ~ condition, data = df_med)
+summary(med_model_efficacy)
+
+# Mediator model norms
+med_model_norms <- lm(norms_c ~ condition, data = df_med)
+summary(med_model_norms)
+
+# Outcome model 
+out_model <- lm(voteInt ~ condition + trust_agg_c + efficacy_c + norms_c, 
+                 data = df_med)
+summary(out_model)
+
+# Check for multi-collinearity between mediators
+vif(out_model)
+
+######### Mediations #########
+
+### Correcting Misperceptions ###
+
+# Correcting Misperceptions via trust
+set.seed(1234)
+CM_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "CorrectingMisperceptions"
+)
+summary(CM_trust)
+
+# Correcting Misperceptions via efficacy
+set.seed(1234)
+CM_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "CorrectingMisperceptions"
+)
+summary(CM_efficacy)
+
+# Correcting Misperceptions via norms
+set.seed(1234)
+CM_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "CorrectingMisperceptions"
+)
+summary(CM_norms)
+
+### Distrust Salience ###
+
+# Distrust Salience via trust
+set.seed(1234)
+DS_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DistrustSalience"
+)
+summary(DS_trust)
+
+# Distrust Salience via efficacy
+set.seed(1234)
+DS_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DistrustSalience"
+)
+summary(DS_efficacy)
+
+# Distrust Salience via norms
+set.seed(1234)
+DS_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DistrustSalience"
+)
+
+summary(DS_norms)
+
+### Dynamic Norms ###
+
+# Dynamic Norms via trust
+set.seed(1234)
+DN_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DynamicNorms"
+)
+summary(DN_trust)
+
+# Dynamic Norms via efficacy
+set.seed(1234)
+DN_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DynamicNorms"
+)
+summary(DN_efficacy)
+
+# Dynamic Norms via norms
+set.seed(1234)
+DN_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DynamicNorms"
+)
+summary(DN_norms)
+
+### Escalating Commitment ###
+
+# Escalating Commitment via trust
+set.seed(1234)
+EC_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "EscalatingCommitment"
+)
+summary(EC_trust)
+
+# Escalating Commitment via efficacy
+set.seed(1234)
+EC_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "EscalatingCommitment"
+)
+summary(EC_efficacy)
+
+# Escalating Commitment via norms
+set.seed(1234)
+EC_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "EscalatingCommitment"
+)
+summary(EC_norms)
+
+### Implementation Intentions ### 
+
+# Implementation Intentions via trust
+set.seed(1234)
+II_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "ImplementationIntentions"
+)
+summary(II_trust)
+
+# Implementation Intentions via efficacy
+set.seed(1234)
+II_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "ImplementationIntentions"
+)
+summary(II_efficacy)
+
+# Implementation Intentions via norms
+set.seed(1234)
+II_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "ImplementationIntentions"
+)
+summary(II_norms)
+
+### Interdependent Construal ### 
+
+# Interdependent Construal via trust
+set.seed(1234)
+IC_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "InterdependentConstrual"
+)
+summary(IC_trust)
+
+# Interdependent Construal via efficacy
+set.seed(1234)
+IC_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "InterdependentConstrual"
+)
+summary(IC_efficacy)
+
+# Interdependent Construal via norms
+set.seed(1234)
+IC_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "InterdependentConstrual"
+)
+summary(IC_norms)
+
+### Moral Reasons ###
+
+# Moral Reasons via trust
+set.seed(1234)
+MR_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "MoralReasons"
+)
+summary(MR_trust)
+
+# Moral Reasons via efficacy
+set.seed(1234)
+MR_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "MoralReasons"
+)
+summary(MR_efficacy)
+
+# Moral Reasons via norms
+set.seed(1234)
+MR_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "MoralReasons"
+)
+summary(MR_norms)
+
+### Personal Importance ###
+
+# Personal Importance via trust
+set.seed(1234)
+PI_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "PersonalImportance"
+)
+summary(PI_trust)
+
+# Personal Importance via efficacy
+set.seed(1234)
+PI_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "PersonalImportance"
+)
+summary(PI_efficacy)
+
+# Personal Importance via norms
+set.seed(1234)
+PI_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "PersonalImportance"
+)
+summary(PI_norms)
+
+### System Justification ### 
+
+# System Justification via trust
+set.seed(1234)
+SJ_trust <- mediation::mediate(
+  model.m = med_model_trust,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "SystemJustification"
+)
+summary(SJ_trust)
+
+# System Justification via efficacy
+set.seed(1234)
+SJ_efficacy <- mediation::mediate(
+  model.m = med_model_efficacy,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "SystemJustification"
+)
+summary(SJ_efficacy)
+
+# System Justification via norms
+set.seed(1234)
+SJ_norms <- mediation::mediate(
+  model.m = med_model_norms,                
+  model.y = out_model,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "SystemJustification"
+)
+summary(SJ_norms)
+
+```
+
+```{r, Print Parallel Medation Voting Intentions}
+
+# Conduct mediation analyses for interventions that significantly increased voting intentions
+
+#### Correcting Misperceptions ###
+cat("\n--------------------------------- Correcting Misperceptions via Trust ---------------------------------\n")
+print(summary(CM_trust))
+print.xtable(format_mediation_output(CM_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Correcting Misperceptions via Efficacy ---------------------------------\n")
+print(summary(CM_efficacy))
+print.xtable(format_mediation_output(CM_efficacy), include.rownames = FALSE) 
+
+cat("\n--------------------------------- Correcting Misperceptions via Norms ---------------------------------\n")
+print(summary(CM_norms))
+print.xtable(format_mediation_output(CM_norms), include.rownames = FALSE)
+
+##
+
+### Distrust Salience ### 
+cat("\n--------------------------------- Distrust Salience via Trust ---------------------------------\n")
+print(summary(DS_trust))
+print.xtable(format_mediation_output(DS_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Distrust Salience via Efficacy ---------------------------------\n")
+print(summary(DS_efficacy))
+print.xtable(format_mediation_output(DS_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- Distrust Salience via Norms ---------------------------------\n")
+print(summary(DS_norms))
+print.xtable(format_mediation_output(DS_norms), include.rownames = FALSE)
+
+##
+
+### Dynamic Norms ###
+cat("\n--------------------------------- Dynamic Norms via Trust ---------------------------------\n")
+print(summary(DN_trust))
+print.xtable(format_mediation_output(DN_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Dynamic Norms via Efficacy ---------------------------------\n")
+print(summary(DN_efficacy))
+print.xtable(format_mediation_output(DN_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- Dynamic Norms via Norms ---------------------------------\n")
+print(summary(DN_norms))
+print.xtable(format_mediation_output(DN_norms), include.rownames = FALSE)
+
+##
+
+### Escalating Commitment ###
+cat("\n--------------------------------- Escalating Commitment via Trust ---------------------------------\n")
+print(summary(EC_trust))
+print.xtable(format_mediation_output(EC_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Escalating Commitment via Efficacy ---------------------------------\n")
+print(summary(EC_efficacy))
+print.xtable(format_mediation_output(EC_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- Escalating Commitment via Norms ---------------------------------\n")
+print(summary(EC_norms))
+print.xtable(format_mediation_output(EC_norms), include.rownames = FALSE)
+
+##
+
+### Implementation Intentions ###
+cat("\n--------------------------------- Implementation Intentions via Trust ---------------------------------\n")
+print(summary(II_trust))
+print.xtable(format_mediation_output(II_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Implementation Intentions via Efficacy ---------------------------------\n")
+print(summary(II_efficacy))
+print.xtable(format_mediation_output(II_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- Implementation Intentions via Norms ---------------------------------\n")
+print(summary(II_norms))
+print.xtable(format_mediation_output(II_norms), include.rownames = FALSE)
+
+##
+
+### Interdependent Construal ###
+cat("\n--------------------------------- Interdependent Construal via Trust ---------------------------------\n")
+print(summary(IC_trust))
+print.xtable(format_mediation_output(IC_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Interdependent Construal via Efficacy ---------------------------------\n")
+print(summary(IC_efficacy))
+print.xtable(format_mediation_output(IC_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- Interdependent Construal via Norms ---------------------------------\n")
+print(summary(IC_norms))
+print.xtable(format_mediation_output(IC_norms), include.rownames = FALSE)
+
+##
+
+### Moral Reasons ###
+cat("\n--------------------------------- Moral Reasons via Trust ---------------------------------\n")
+print(summary(MR_trust))
+print.xtable(format_mediation_output(MR_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Moral Reasons via Efficacy ---------------------------------\n")
+print(summary(MR_efficacy))
+print.xtable(format_mediation_output(MR_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- Moral Reasons via Norms ---------------------------------\n")
+print(summary(MR_norms))
+print.xtable(format_mediation_output(MR_norms), include.rownames = FALSE)
+
+##
+
+### Personal Importance ###
+cat("\n--------------------------------- Personal Importance via Trust ---------------------------------\n")
+print(summary(PI_trust))
+print.xtable(format_mediation_output(PI_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- Personal Importance via Efficacy ---------------------------------\n")
+print(summary(PI_efficacy))
+print.xtable(format_mediation_output(PI_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- Personal Importance via Norms ---------------------------------\n")
+print(summary(PI_norms))
+print.xtable(format_mediation_output(PI_norms), include.rownames = FALSE)
+
+##
+
+### System Justification ###
+cat("\n--------------------------------- System Justification via Trust ---------------------------------\n")
+print(summary(SJ_trust))
+print.xtable(format_mediation_output(SJ_trust), include.rownames = FALSE)
+
+cat("\n--------------------------------- System Justification via Efficacy ---------------------------------\n")
+print(summary(SJ_efficacy))
+print.xtable(format_mediation_output(SJ_efficacy), include.rownames = FALSE)
+
+cat("\n--------------------------------- System Justification via Norms ---------------------------------\n")
+print(summary(SJ_norms))
+print.xtable(format_mediation_output(SJ_norms), include.rownames = FALSE)
+
+```
+
+```{r, Sensitivity Analyses Voting Intentions}
+
+# Use for significant indirect effects
+
+# Correcting Misperceptions --> voting intentions 
+# Via trust
+CM_trust_sense <- medsens(CM_trust, rho.by = 0.05)
+summary(CM_trust_sense)
+plot(CM_trust_sense)
+
+##
+
+# Distrust Salience --> voting intentions 
+
+# Via trust
+DS_trust_sense <- medsens(DS_trust, rho.by = 0.05)
+summary(DS_trust_sense)
+plot(DS_trust_sense)
+
+# Via efficacy
+DS_efficacy_sense <- medsens(DS_efficacy, rho.by = 0.05)
+summary(DS_efficacy_sense)
+plot(DS_efficacy_sense)
+
+# Via norms
+DS_norms_sense <- medsens(DS_norms, rho.by = 0.05)
+summary(DS_norms_sense)
+plot(DS_norms_sense)
+
+##
+
+# Dynamic Norms --> voting intentions
+
+# Via trust
+DN_trust_sens <- medsens(DN_trust, rho.by = 0.05)
+summary(DN_trust_sens)
+plot(DN_trust_sens)
+
+# Via efficacy
+DN_efficacy_sens <- medsens(DN_efficacy, rho.by = 0.05)
+summary(DN_efficacy_sens)
+plot(DN_efficacy_sens)
+
+##
+
+# Escalating Commitment --> voting intentions 
+
+# Via trust
+EC_trust_sense <- medsens(EC_trust, rho.by = 0.05)
+summary(EC_trust_sense)
+plot(EC_trust_sense)
+
+# Via efficacy
+EC_efficacy_sense <- medsens(EC_efficacy, rho.by = 0.05)
+summary(EC_efficacy_sense)
+plot(EC_efficacy_sense)
+
+##
+
+# Implementation Intentions --> voting intentions
+
+# Via trust
+II_trust_sens <- medsens(II_trust, rho.by = 0.05)
+summary(II_trust_sens)
+plot(II_trust_sens)
+
+##
+
+# Moral Reasons --> voting intentions
+
+# Via trust
+MR_trust_sens <- medsens(MR_trust, rho.by = 0.05)
+summary(MR_trust_sens)
+plot(MR_trust_sens)
+
+# Via efficacy
+MR_efficacy_sens <- medsens(MR_efficacy, rho.by = 0.05)
+summary(MR_efficacy_sens)
+plot(MR_efficacy_sens)
+
+##
+
+# Personal Importance --> voting intentions
+
+# Via trust
+PI_trust_sens <- medsens(PI_trust, rho.by = 0.05)
+summary(PI_trust_sens)
+plot(PI_trust_sens)
+
+# Via efficacy
+PI_efficacy_sens <- medsens(PI_efficacy, rho.by = 0.05)
+summary(PI_efficacy_sens)
+plot(PI_efficacy_sens)
+
+##
+
+# System Justification --> voting intentions 
+
+# Via trust
+SJ_trust_sens <- medsens(SJ_trust, rho.by = 0.05)
+summary(SJ_trust_sens)
+plot(SJ_trust_sens)
+
+# Via efficacy
+SJ_efficacy_sens <- medsens(SJ_efficacy, rho.by = 0.05)
+summary(SJ_efficacy_sens)
+plot(SJ_efficacy_sens)
+
+```
+
+# Link Clicks
+
+```{r, Parallel Medation Link Clicks}
+
+# Only use complete data
+df_med2 <- df %>%
+  dplyr::select(linkClicked_n, condition, trust_agg_c, efficacy_c, 
+                norms_c) %>%
+  na.omit()
+
+# Specify each path
+
+# Mediator model trust
+med_model_trust2 <- lm(trust_agg_c ~ condition, data = df_med2)
+summary(med_model_trust2)
+
+# Mediator model efficacy
+med_model_efficacy2 <- lm(efficacy_c ~ condition, data = df_med2)
+summary(med_model_efficacy2)
+
+# Mediator model norms
+med_model_norms2 <- lm(norms_c ~ condition, data = df_med2)
+summary(med_model_norms2)
+
+# Outcome model 
+out_model2 <- lm(linkClicked_n ~ condition + trust_agg_c + efficacy_c + norms_c, data = df_med2)
+summary(out_model2)
+
+# Check for multi-collinearity between mediators
+vif(out_model2)
+
+######### Mediations #########
+
+# Only for interventions that significantly increased link clicks after BH correction
+
+### Correcting Misperceptions ###
+
+# Correcting Misperceptions via trust
+set.seed(1234)
+CM_trust2 <- mediation::mediate(
+  model.m = med_model_trust2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "CorrectingMisperceptions"
+)
+summary(CM_trust2)
+
+# Correcting Misperceptions via efficacy
+set.seed(1234)
+CM_efficacy2 <- mediation::mediate(
+  model.m = med_model_efficacy2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "CorrectingMisperceptions"
+)
+summary(CM_efficacy2)
+
+# Correcting Misperceptions via norms
+set.seed(1234)
+CM_norms2 <- mediation::mediate(
+  model.m = med_model_norms2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  
+  control.value = "ControlCondition",      
+  treat.value = "CorrectingMisperceptions"
+)
+summary(CM_norms2)
+
+### Dynamic Norms ###
+
+# Dynamic Norms via trust
+set.seed(1234)
+DN_trust2 <- mediation::mediate(
+  model.m = med_model_trust2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DynamicNorms"
+)
+summary(DN_trust2)
+
+# Dynamic Norms via efficacy
+set.seed(1234)
+DN_efficacy2 <- mediation::mediate(
+  model.m = med_model_efficacy2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DynamicNorms"
+)
+summary(DN_efficacy2)
+
+# Dynamic Norms via norms
+set.seed(1234)
+DN_norms2 <- mediation::mediate(
+  model.m = med_model_norms2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "DynamicNorms"
+)
+summary(DN_norms2)
+
+### Escalating Commitment ###
+
+# Escalating Commitment via trust
+set.seed(1234)
+EC_trust2 <- mediation::mediate(
+  model.m = med_model_trust2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "EscalatingCommitment"
+)
+summary(EC_trust2)
+
+# Escalating Commitment via efficacy
+set.seed(1234)
+EC_efficacy2 <- mediation::mediate(
+  model.m = med_model_efficacy2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "EscalatingCommitment"
+)
+summary(EC_efficacy2)
+
+# Escalating Commitment via norms
+set.seed(1234)
+EC_norms2 <- mediation::mediate(
+  model.m = med_model_norms2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "EscalatingCommitment"
+)
+summary(EC_norms2)
+
+### Implementation Intentions ### 
+
+# Implementation Intentions via trust
+set.seed(1234)
+II_trust2 <- mediation::mediate(
+  model.m = med_model_trust2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "ImplementationIntentions"
+)
+summary(II_trust2)
+
+# Implementation Intentions via efficacy
+set.seed(1234)
+II_efficacy2 <- mediation::mediate(
+  model.m = med_model_efficacy2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "ImplementationIntentions"
+)
+summary(II_efficacy2)
+
+# Implementation Intentions via norms
+set.seed(1234)
+II_norms2 <- mediation::mediate(
+  model.m = med_model_norms2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  
+  control.value = "ControlCondition",      
+  treat.value = "ImplementationIntentions"
+)
+summary(II_norms2)
+
+### System Justification ### 
+
+# System Justification via trust
+set.seed(1234)
+SJ_trust2 <- mediation::mediate(
+  model.m = med_model_trust2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "trust_agg_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "SystemJustification"
+)
+summary(SJ_trust2)
+
+# System Justification via efficacy
+set.seed(1234)
+SJ_efficacy2 <- mediation::mediate(
+  model.m = med_model_efficacy2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "efficacy_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "SystemJustification"
+)
+summary(SJ_efficacy2)
+
+# System Justification via norms
+set.seed(1234)
+SJ_norms2 <- mediation::mediate(
+  model.m = med_model_norms2,                
+  model.y = out_model2,               
+  treat = "condition",            
+  mediator = "norms_c",          
+  boot = TRUE,                   
+  sims = 1000,
+  control.value = "ControlCondition",      
+  treat.value = "SystemJustification"
+)
+summary(SJ_norms2)
+
+```
+
+```{r, Print Parallel Medation Link Clicks}
+
+# Correcting Misperceptions
+cat("\n--------------------------------- Correcting Misperceptions via Trust ---------------------------------\n")
+print(summary(CM_trust2))
+print.xtable(format_mediation_output(CM_trust2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Correcting Misperceptions via Efficacy ---------------------------------\n")
+print(summary(CM_efficacy2))
+print.xtable(format_mediation_output(CM_efficacy2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Correcting Misperceptions via Norms ---------------------------------\n")
+print(summary(CM_norms2))
+print.xtable(format_mediation_output(CM_norms2), include.rownames = FALSE)
+
+##
+
+# Dynamic Norms
+cat("\n--------------------------------- Dynamic Norms via Trust ---------------------------------\n")
+print(summary(DN_trust2))
+print.xtable(format_mediation_output(DN_trust2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Dynamic Norms via Efficacy ---------------------------------\n")
+print(summary(DN_efficacy2))
+print.xtable(format_mediation_output(DN_efficacy2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Dynamic Norms via Norms ---------------------------------\n")
+print(summary(DN_norms2))
+print.xtable(format_mediation_output(DN_norms2), include.rownames = FALSE)
+
+##
+
+# Escalating Commitment
+cat("\n--------------------------------- Escalating Commitment via Trust ---------------------------------\n")
+print(summary(EC_trust2))
+print.xtable(format_mediation_output(EC_trust2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Escalating Commitment via Efficacy ---------------------------------\n")
+print(summary(EC_efficacy2))
+print.xtable(format_mediation_output(EC_efficacy2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Escalating Commitment via Norms ---------------------------------\n")
+print(summary(EC_norms2))
+print.xtable(format_mediation_output(EC_norms2), include.rownames = FALSE)
+
+##
+
+# Implementation Intentions
+cat("\n--------------------------------- Implementation Intentions via Trust ---------------------------------\n")
+print(summary(II_trust2))
+print.xtable(format_mediation_output(II_trust2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Implementation Intentions via Efficacy ---------------------------------\n")
+print(summary(II_efficacy2))
+print.xtable(format_mediation_output(II_efficacy2), include.rownames = FALSE)
+
+cat("\n--------------------------------- Implementation Intentions via Norms ---------------------------------\n")
+print(summary(II_norms2))
+print.xtable(format_mediation_output(II_norms2), include.rownames = FALSE)
+
+##
+
+# System Justification
+cat("\n--------------------------------- System Justification via Trust ---------------------------------\n")
+print(summary(SJ_trust2))
+print.xtable(format_mediation_output(SJ_trust2), include.rownames = FALSE)
+
+cat("\n--------------------------------- System Justification via Efficacy ---------------------------------\n")
+print(summary(SJ_efficacy2))
+print.xtable(format_mediation_output(SJ_efficacy2), include.rownames = FALSE)
+
+cat("\n--------------------------------- System Justification via Norms ---------------------------------\n")
+print(summary(SJ_norms2))
+print.xtable(format_mediation_output(SJ_norms2), include.rownames = FALSE)
+
+```
+
+```{r, Sensitivity Analyses Link Clicks}
+
+# Use for significant indirect effects
+
+# Dynamic Norms --> link clicks via efficacy
+DN_efficacy_sense2 <- medsens(DN_efficacy2, rho.by = 0.05)
+summary(DN_efficacy_sense2)
+plot(DN_efficacy_sense2)
+
+# Escalating Commitment --> link clicks via efficacy
+EC_efficacy_sense2 <- medsens(EC_efficacy2, rho.by = 0.05)
+summary(EC_efficacy_sense2)
+plot(EC_efficacy_sense2)
+
+# System Justification --> link clicks via efficacy
+SJ_efficacy_sense2 <- medsens(SJ_efficacy2, rho.by = 0.05)
+summary(SJ_efficacy_sense2)
+plot(SJ_efficacy_sense2)
+
+```

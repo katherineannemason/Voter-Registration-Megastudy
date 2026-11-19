@@ -1,0 +1,1240 @@
+---
+title: "Helper Functions"
+author: "Katherine Mason"
+format: html
+editor: source
+---
+
+##################################################### Helper Functions
+
+```{r, Variable Labels for Helper Functions}
+
+variable_labels <- c("ControlCondition" = "Control Condition", 
+                      "DistrustSalience" = "Distrust Salience", 
+                     "CorrectingMisperceptions" = "Correcting Misperceptions", 
+                     "DynamicNorms" = "Dynamic Norms", 
+                     "SelfGeneratedNorms" = "Self-Generated Norms", 
+                     "SystemJustification" = "System Justification", 
+                     "EscalatingCommitment" = "Escalating Commitment", 
+                     "PersonalImportance" = "Personal Importance", 
+                     "InterdependentConstrual" = "Interdependent Construal", 
+                     "MoralReasons" = "Moral Reasons",
+                     "ImplementationIntentions" = "Implementation Intentions", 
+                     "pre_intention_c" = "Registration Intention", "race_bin_e" = "Race",
+                     "gend_e" = "Gender", "Asian_E" = "Asian", "Black_E" = "Black", 
+                     "Latinx_E" = "LatinX", "ME_E" = "Middle Eastern", 
+                     "Native_E" = "Native", "Multiracial_E" = "Multiracial", "Other_E" = "Other", 
+                     "age_c" = "Age", "income_c" = "Income", "edu_c" = "Education", 
+                     "ide_c" = "Ideology", "interest_c" = "Interest", 
+                     "knowledge_c" = "Knowledge",
+                     
+                      # Interactions: Ideology
+                     "DistrustSalience:ide_c" = "Distrust Salience:Ideology", 
+                     "CorrectingMisperceptions:ide_c" = "Correcting Misperceptions:Ideology",
+                     "DynamicNorms:ide_c" = "Dynamic Norms:Ideology", 
+                     "EscalatingCommitment:ide_c" = "Escalating Commitment:Ideology", 
+                     "ImplementationIntentions:ide_c" = "Implementation Intentions:Ideology", 
+                     "InterdependentConstrual:ide_c" = "Interdependent Construal:Ideology", 
+                     "MoralReasons:ide_c" = "Moral Reasons:Ideology",
+                     "PersonalImportance:ide_c" = "Personal Importance:Ideology", 
+                     "SelfGeneratedNorms:ide_c" = "Self-Generated Norms:Ideology",
+                     "SystemJustification:ide_c" = "System Justification:Ideology",
+                     
+                      # Interactions: Gender
+                     "DistrustSalience:gend_e" = "Distrust Salience:Gender", 
+                     "CorrectingMisperceptions:gend_e" = "Correcting Misperceptions:Gender",  
+                     "DynamicNorms:gend_e" = "Dynamic Norms:Gender", 
+                     "EscalatingCommitment:gend_e" = "Escalating Commitment:Gender",
+                     "ImplementationIntentions:gend_e" = "Implementation Intentions:Gender", 
+                     "InterdependentConstrual:gend_e" = "Interdependent Construal:Gender", 
+                     "MoralReasons:gend_e" = "Moral Reasons:Gender",
+                     "PersonalImportance:gend_e" = "Personal Importance:Gender", 
+                     "SelfGeneratedNorms:gend_e" = "Self-Generated Norms:Gender",
+                     "SystemJustification:gend_e" = "System Justification:Gender", 
+                     
+                      # Interactions: Race/Ethnicity
+                      "DistrustSalience:race_bin_e" = "Distrust Salience:Race",
+                      "CorrectingMisperceptions:race_bin_e" = "Correcting Misperceptions:Race",
+                      "DynamicNorms:race_bin_e" = "Dynamic Norms:Race",
+                      "EscalatingCommitment:race_bin_e" = "Escalating Commitment:Race",
+                      "ImplementationIntentions:race_bin_e" = "Implementation Intentions:Race",
+                      "InterdependentConstrual:race_bin_e" = "Interdependent Construal:Race",
+                      "MoralReasons:race_bin_e" = "Moral Reasons:Race",
+                      "PersonalImportance:race_bin_e" = "Personal Importance:Race",
+                      "SelfGeneratedNorms:race_bin_e" = "Self-Generated Norms:Race",
+                      "SystemJustification:race_bin_e" = "System Justification:Race",
+                      
+                      # Interactions: Age
+                      "DistrustSalience:age_c" = "Distrust Salience:Age",
+                      "CorrectingMisperceptions:age_c" = "Correcting Misperceptions:Age",
+                      "DynamicNorms:age_c" = "Dynamic Norms:Age",
+                      "EscalatingCommitment:age_c" = "Escalating Commitment:Age",
+                      "ImplementationIntentions:age_c" = "Implementation Intentions:Age",
+                      "InterdependentConstrual:age_c" = "Interdependent Construal:Age",
+                      "MoralReasons:age_c" = "Moral Reasons:Age",
+                      "PersonalImportance:age_c" = "Personal Importance:Age",
+                      "SelfGeneratedNorms:age_c" = "Self-Generated Norms:Age",
+                      "SystemJustification:age_c" = "System Justification:Age",
+                      
+                      # Interactions: Income
+                      "DistrustSalience:income_c" = "Distrust Salience:Income",
+                      "CorrectingMisperceptions:income_c" = "Correcting Misperceptions:Income",
+                      "DynamicNorms:income_c" = "Dynamic Norms:Income",
+                      "EscalatingCommitment:income_c" = "Escalating Commitment:Income",
+                      "ImplementationIntentions:income_c" = "Implementation Intentions:Income",
+                      "InterdependentConstrual:income_c" = "Interdependent Construal:Income",
+                      "MoralReasons:income_c" = "Moral Reasons:Income",
+                      "PersonalImportance:income_c" = "Personal Importance:Income",
+                      "SelfGeneratedNorms:income_c" = "Self-Generated Norms:Income",
+                      "SystemJustification:income_c" = "System Justification:Income",
+                      
+                      # Interactions: Education
+                      "DistrustSalience:edu_c" = "Distrust Salience:Education",
+                      "CorrectingMisperceptions:edu_c" = "Correcting Misperceptions:Education",
+                      "DynamicNorms:edu_c" = "Dynamic Norms:Education",
+                      "EscalatingCommitment:edu_c" = "Escalating Commitment:Education",
+                      "ImplementationIntentions:edu_c" = "Implementation Intentions:Education",
+                      "InterdependentConstrual:edu_c" = "Interdependent Construal:Education",
+                      "MoralReasons:edu_c" = "Moral Reasons:Education",
+                      "PersonalImportance:edu_c" = "Personal Importance:Education",
+                      "SelfGeneratedNorms:edu_c" = "Self-Generated Norms:Education",
+                      "SystemJustification:edu_c" = "System Justification:Education",
+                     
+                     # Interactions: Interest (centered)
+                      "DistrustSalience:interest_c" = "Distrust Salience:Interest",
+                      "CorrectingMisperceptions:interest_c" = "Correcting Misperceptions:Interest",
+                      "DynamicNorms:interest_c" = "Dynamic Norms:Interest",
+                      "EscalatingCommitment:interest_c" = "Escalating Commitment:Interest",
+                      "ImplementationIntentions:interest_c" = "Implementation Intentions:Interest",
+                      "InterdependentConstrual:interest_c" = "Interdependent Construal:Interest",
+                      "MoralReasons:interest_c" = "Moral Reasons:Interest",
+                      "PersonalImportance:interest_c" = "Personal Importance:Interest",
+                      "SelfGeneratedNorms:interest_c" = "Self-Generated Norms:Interest",
+                      "SystemJustification:interest_c" = "System Justification:Interest",
+                      
+                     # Interactions: Interest (uncentered)
+                      "DistrustSalience:interest" = "Distrust Salience:Interest",
+                      "CorrectingMisperceptions:interest" = "Correcting Misperceptions:Interest",
+                      "DynamicNorms:interest" = "Dynamic Norms:Interest",
+                      "EscalatingCommitment:interest" = "Escalating Commitment:Interest",
+                      "ImplementationIntentions:interest" = "Implementation Intentions:Interest",
+                      "InterdependentConstrual:interest" = "Interdependent Construal:Interest",
+                      "MoralReasons:interest" = "Moral Reasons:Interest",
+                      "PersonalImportance:interest" = "Personal Importance:Interest",
+                      "SelfGeneratedNorms:interest" = "Self-Generated Norms:Interest",
+                      "SystemJustification:interest" = "System Justification:Interest",
+                      "interest" = "Interest",
+                     
+                     # Interactions: Registration intention
+                      "DistrustSalience:pre_intention_c" = "Distrust Salience:Registration Intention",
+                      "CorrectingMisperceptions:pre_intention_c" = "Correcting Misperceptions:Registration Intention",
+                      "DynamicNorms:pre_intention_c" = "Dynamic Norms:Registration Intention",
+                      "EscalatingCommitment:pre_intention_c" = "Escalating Commitment:Registration Intention",
+                      "ImplementationIntentions:pre_intention_c" = "Implementation Intentions:Registration Intention",
+                      "InterdependentConstrual:pre_intention_c" = "Interdependent Construal:Registration Intention",
+                      "MoralReasons:pre_intention_c" = "Moral Reasons:Registration Intention",
+                      "PersonalImportance:pre_intention_c" = "Personal Importance:Registration Intention",
+                      "SelfGeneratedNorms:pre_intention_c" = "Self-Generated Norms:Registration Intention",
+                      "SystemJustification:pre_intention_c" = "System Justification:Registration Intention",
+                     
+                     # Interactions: Knowledge
+                      "DistrustSalience:knowledge_c" = "Distrust Salience:Knowledge",
+                      "CorrectingMisperceptions:knowledge_c" = "Correcting Misperceptions:Knowledge",
+                      "DynamicNorms:knowledge_c" = "Dynamic Norms:Knowledge",
+                      "EscalatingCommitment:knowledge_c" = "Escalating Commitment:Knowledge",
+                      "ImplementationIntentions:knowledge_c" = "Implementation Intentions:Knowledge",
+                      "InterdependentConstrual:knowledge_c" = "Interdependent Construal:Knowledge",
+                      "MoralReasons:knowledge_c" = "Moral Reasons:Knowledge",
+                      "PersonalImportance:knowledge_c" = "Personal Importance:Knowledge",
+                      "SelfGeneratedNorms:knowledge_c" = "Self-Generated Norms:Knowledge",
+                      "SystemJustification:knowledge_c" = "System Justification:Knowledge",
+                     
+                      # Interactions: COVI
+                      "COVI_c" = "COVI",
+                      "DistrustSalience:COVI_c" = "Distrust Salience:COVI",
+                      "CorrectingMisperceptions:COVI_c" = "Correcting Misperceptions:COVI",
+                      "DynamicNorms:COVI_c" = "Dynamic Norms:COVI",
+                      "EscalatingCommitment:COVI_c" = "Escalating Commitment:COVI",
+                      "ImplementationIntentions:COVI_c" = "Implementation Intentions:COVI",
+                      "InterdependentConstrual:COVI_c" = "Interdependent Construal:COVI",
+                      "MoralReasons:COVI_c" = "Moral Reasons:COVI",
+                      "PersonalImportance:COVI_c" = "Personal Importance:COVI",
+                      "SelfGeneratedNorms:COVI_c" = "Self-Generated Norms:COVI",
+                      "SystemJustification:COVI_c" = "System Justification:COVI",
+                     
+                       # Interactions: Swing state 
+                       "swing_E" = "Swing", 
+                       "CorrectingMisperceptions:swing_E" = "Correcting Misperceptions:Swing", 
+                       "DistrustSalience:swing_E" = "Distrust Salience:Swing",
+                       "DynamicNorms:swing_E" = "Dynamic Norms:Swing", 
+                       "EscalatingCommitment:swing_E" = "Escalating Commitment:Swing",
+                       "ImplementationIntentions:swing_E" = "Implementation Intentions:Swing",  
+                       "InterdependentConstrual:swing_E" = "Interdependent Construal:Swing",
+                       "MoralReasons:swing_E" =  "Moral Reasons:Swing", 
+                       "PersonalImportance:swing_E" =  "Personal Importance:Swing", 
+                       "SelfGeneratedNorms:swing_E" = "Self-Generated Norms:Swing",  
+                       "SystemJustification:swing_E" = "System Justification:Swing",   
+                     
+                       "reg_vs_voteRegistration" = "Target Behavior - Registration",
+                       "reg_vs_voteVoting" = "Target Behavior - Voting",
+                       "reg_vs_voteBoth" = "Target Behavior - Both",
+                     
+                       # Intervention features
+                       "word_count" = "Words (Count)",
+                       "mc" = "Multiple Choice (Count)",
+                       "openend" = "Open Ended (Count)",
+                       "timer" = "Seconds",
+                       "pages" = "Pages (Count)"
+                     )
+
+   
+# Conditions to keep for the plot
+keep_conditions <- c("DistrustSalience", "CorrectingMisperceptions", "DynamicNorms", 
+                     "EscalatingCommitment", "ImplementationIntentions", "InterdependentConstrual",
+                     "MoralReasons", "PersonalImportance", "SelfGeneratedNorms", "SystemJustification")
+
+```
+
+```{r, Helper Function - Rounding}
+
+# Up to 6 digits
+clean_round <- function(x, min_digits = 2, max_digits = 6) {
+  sapply(x, function(val) {
+    if (is.na(val)) return(NA_character_)
+    if (val == 0) return(sprintf(paste0("%.", min_digits, "f"), val))
+    
+    digits <- min_digits
+    
+    while (round(val, digits) == 0 && digits < max_digits) {
+      digits <- digits + 1
+    }
+    
+    sprintf(paste0("%.", digits, "f"), val)
+  })
+}
+
+# Three decimals
+clean_round_3 <- function(x, digits = 3) {
+  sprintf(paste0("%.", digits, "f"), x)
+}
+
+
+```
+
+```{r, Helper Function - JS Shrink}
+
+#### James-Stein shrinkage function for primary outcomes #### 
+
+# James-Stein shrinkage code based on Milkman et al (2022) 
+# A 680,000-person megastudy of nudges to encourage vaccination in pharmacies 
+
+shrink_condition_effects <- function(model, vcov_matrix, prefix = "condition") {
+  
+  # Identify intervention coefficients
+  condition_names <- names(coef(model))[
+    grepl(paste0("^", prefix), names(coef(model)))
+  ]
+  
+  # Extract intervention estimates
+  theta_hat <- coef(model)[condition_names]
+  
+  # Number of intervention estimates
+  K <- length(theta_hat)
+  
+  # Mean intervention effect
+  theta_line <- mean(theta_hat)
+  
+  # Pull variance-covariance matrix for intervention estimates
+  V <- vcov_matrix[
+    condition_names,
+    condition_names,
+    drop = FALSE
+  ]
+  
+  # Invert variance-covariance matrix
+  V_inv <- solve(V)
+  
+  # Difference between each estimate and mean intervention effect
+  theta_hat_minus_line <- theta_hat - theta_line
+  
+  # James-Stein shrinkage term
+  numerator <- K - 3
+  
+  denominator <- as.numeric(
+    t(theta_hat_minus_line) %*%
+      V_inv %*%
+      theta_hat_minus_line
+  )
+  
+  term <- numerator / denominator
+  
+  # James-Stein estimates
+  theta_js <- theta_hat - term * theta_hat_minus_line
+  
+  # Create data frame
+  result <- data.frame(
+    Condition = condition_names,
+    Original = as.numeric(theta_hat),
+    Shrunk = as.numeric(theta_js)
+  )
+  
+  # Clean condition names
+  result$Condition <- gsub(paste0("^", prefix), "", result$Condition)
+  
+  return(result)
+}
+
+```
+
+##
+
+# LM One-Tailed
+
+```{r, Helper Function - LM One-Tailed with Shrinkage}
+
+#### Tables - LM one-tailed #### 
+
+format_lm_output_onetailed_shrink <- function(model1, model2,
+                                              original_model,
+                                              vcov_matrix,
+                                              output_file_tex = "results_table.tex",
+                                              prefix = "condition") {
+  
+  # Row names from model output
+  term_names <- rownames(model1)
+  
+  # Identify intervention rows only
+  is_intervention <- grepl(paste0("^", prefix), term_names)
+  
+  # Step 1: Calculate one-tailed p only for intervention effects (not intercept or any covariates)
+  tvals <- model1[, "t value"]
+  p_two <- model1[, "Pr(>|t|)"]
+  
+  p_one <- ifelse(tvals > 0, p_two / 2, 1 - (p_two / 2)) # If pos, divide p by 2, if neg (opposite of proposed direction) 1-(p/2)
+  
+  # Final p: one-tailed for interventions (two-tailed for intercept or any covariates)
+  p_final <- ifelse(is_intervention, p_one, p_two)
+  
+  # Step 2: Extract and adjust raw model results
+  results_df <- data.frame(
+    Term = term_names,
+    Condition = gsub(paste0("^", prefix), "", term_names),
+    b = model1[, "Estimate"],
+    β = model2$coefficients,
+    SE = model1[, "Std. Error"],
+    t = tvals,
+    p_two = p_two,
+    p_one = p_one,
+    p_final = p_final,
+    is_intervention = is_intervention,
+    Lower_ci = confint(model1, level = 0.90)[, 1],
+    Upper_ci = confint(model1, level = 0.90)[, 2]
+  )
+  
+  rownames(results_df) <- NULL
+  
+  # Step 3: Apply shrinkage only to intervention effects
+  shrunk_df <- shrink_condition_effects(original_model, vcov_matrix, prefix = prefix)
+  results_df <- left_join(results_df, shrunk_df, by = "Condition") %>%
+    dplyr::select(-Original)
+  
+  ### Part 1: Full data frame
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = case_when(
+        Term == "(Intercept)" ~ "(Intercept)",
+        is_intervention ~ dplyr::recode(Condition, !!!variable_labels),
+        TRUE ~ dplyr::recode(Term, !!!variable_labels)
+      ),
+      b = clean_round(b),
+      β = clean_round(β),
+      SE = clean_round(SE),
+      t = clean_round(t),
+      p = ifelse(p_final < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_final))),
+      Shrunk = ifelse(is.na(Shrunk), "", clean_round(Shrunk)),
+      Lower_ci = clean_round(Lower_ci),
+      Upper_ci = clean_round(Upper_ci),
+      `90% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+    ) %>%
+    dplyr::select(
+      Variable,
+      b, SE, t, p, 
+      Shrunk,`90% CI` # Remove the CI for covariate tables since 90% only corresponds to one-tailed tests for interventions
+    )
+  
+  colnames(appendix_table)[colnames(appendix_table) == "Shrunk"] <- "Shrunk (b)"
+  
+  align_spec <- c("l","l", "r", "r", "r", "r", "r", "r")
+  
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = TRUE)
+  
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+    file = output_file_tex)
+  
+  # Print appendix
+  print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  ### Part 3: Subset for plotting
+  plot_df <- results_df %>%
+    filter(Condition %in% keep_conditions) %>%
+    dplyr::select(Condition, b, Lower_ci, Upper_ci)
+  
+  return(list(full = full_info, appendix = appendix_table, plot = plot_df, appendix_xtable = appendix_xtable))
+}
+
+```
+
+```{r, Helper Function - LM One-Tailed}
+
+#### Tables - LM one-tailed #### 
+
+format_lm_output_onetailed <- function(model1, model2,
+                                       output_file_tex = "results_table.tex",
+                                       prefix = "condition") {
+  
+  # Row names from model output
+  term_names <- rownames(model1)
+  
+  # Identify intervention rows only
+  is_intervention <- grepl(paste0("^", prefix), term_names)
+  
+  # Step 1: Calculate one-tailed p only for intervention effects (not intercept or any covariates)
+  tvals <- model1[, "t value"]
+  p_two <- model1[, "Pr(>|t|)"]
+  
+  p_one <- ifelse(tvals > 0, p_two / 2, 1 - (p_two / 2)) # If pos, divide p by 2, if neg (opposite of proposed direction) 1-(p/2)
+  
+  # Final p: one-tailed for interventions (two-tailed for intercept or any covariates)
+  p_final <- ifelse(is_intervention, p_one, p_two)
+  
+  # Step 2: Extract and adjust raw model results
+  results_df <- data.frame(
+    Term = term_names,
+    Condition = gsub(paste0("^", prefix), "", term_names),
+    b = model1[, "Estimate"],
+    β = model2$coefficients,
+    SE = model1[, "Std. Error"],
+    t = tvals,
+    p_two = p_two,
+    p_one = p_one,
+    p_final = p_final,
+    is_intervention = is_intervention,
+    Lower_ci = confint(model1, level = 0.90)[, 1],
+    Upper_ci = confint(model1, level = 0.90)[, 2]
+  )
+  
+  rownames(results_df) <- NULL
+
+  ### Part 1: Full data frame
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = case_when(
+        Term == "(Intercept)" ~ "(Intercept)",
+        is_intervention ~ dplyr::recode(Condition, !!!variable_labels),
+        TRUE ~ dplyr::recode(Term, !!!variable_labels)
+      ),
+      b = clean_round(b),
+      β = clean_round(β),
+      SE = clean_round(SE),
+      t = clean_round(t),
+      p = ifelse(p_final < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_final))),
+      Lower_ci = clean_round(Lower_ci),
+      Upper_ci = clean_round(Upper_ci),
+      `90% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+    ) %>%
+    dplyr::select(
+      Variable,
+      b, SE, t, p
+      ,`90% CI` # Remove the CI for covariate tables since 90% only corresponds to one-tailed tests for interventions
+    )
+  
+  align_spec <- c("l","l", "r", "r", "r", "r", "r")
+  
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = TRUE)
+  
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+    file = output_file_tex)
+  
+  # Print appendix
+  print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  ### Part 3: Subset for plotting
+  plot_df <- results_df %>%
+    filter(Condition %in% keep_conditions) %>%
+    dplyr::select(Condition, b, Lower_ci, Upper_ci)
+  
+  return(list(full = full_info, appendix = appendix_table, plot = plot_df, appendix_xtable = appendix_xtable))
+}
+
+```
+
+```{r, Helper Function - LM One-Tailed for Binary DV with Shrinkage}
+
+#### Tables - LM one-tailed #### 
+
+# Function:
+format_lm_bin_output_onetailed_shrink <- function(model1, model2,
+                                                  original_model,
+                                                  vcov_matrix,
+                                                  output_file_tex = "results_table.tex", 
+                                                  prefix = "condition") {
+  
+  # Row names from model output
+  term_names <- rownames(model1)
+  
+  # Identify intervention rows only
+  is_intervention <- grepl(paste0("^", prefix), term_names)
+  
+  # Step 1: Calculate one-tailed p only for intervention effects (not intercept or any covariates)
+  tvals <- model1[, "t value"]
+  p_two <- model1[, "Pr(>|t|)"]
+  
+  p_one <- ifelse(tvals > 0, p_two / 2, 1 - (p_two / 2)) # If pos, divide p by 2, if neg (opposite of proposed direction) 1-(p/2)
+  
+  # Final p: one-tailed for interventions (two-tailed for intercept or any covariates)
+  p_final <- ifelse(is_intervention, p_one, p_two)
+  
+  # Step 2: Extract and adjust raw model results
+  results_df <- data.frame(
+    Term = term_names,
+    Condition = gsub(paste0("^", prefix), "", term_names),
+    b = model1[, "Estimate"],
+    β = model2$coefficients,
+    SE = model1[, "Std. Error"],
+    t = tvals,
+    p_two = p_two,
+    p_one = p_one,
+    p_final = p_final,
+    is_intervention = is_intervention,
+    Lower_ci = confint(model1, level = 0.90)[, 1],
+    Upper_ci = confint(model1, level = 0.90)[, 2]
+  )
+  
+   rownames(results_df) <- NULL
+   
+  # Step 3: Apply shrinkage only to intervention effects
+  shrunk_df <- shrink_condition_effects(original_model, vcov_matrix, prefix = prefix)
+  results_df <- left_join(results_df, shrunk_df, by = "Condition") %>%
+    dplyr::select(-Original)
+  
+  ### Part 1: Full data frame 
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = case_when(
+        Term == "(Intercept)" ~ "(Intercept)",
+        is_intervention ~ dplyr::recode(Condition, !!!variable_labels),
+        TRUE ~ dplyr::recode(Term, !!!variable_labels)
+      ),
+      'PP Inc.' = clean_round(b*100), 
+      b = clean_round(b),
+      β = clean_round(β),
+      SE = clean_round(SE),
+      t = clean_round(t),
+      p = ifelse(p_final < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_final))),
+      Shrunk = ifelse(is.na(Shrunk), "", clean_round(Shrunk)),
+      Lower_ci = clean_round(Lower_ci),
+      Upper_ci = clean_round(Upper_ci),
+      # Lower_ci = clean_round_3(Lower_ci), # Three decimals for reg outcome
+      # Upper_ci = clean_round_3(Upper_ci),
+      `90% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+    ) %>%
+    dplyr::select(
+      Variable, 'PP Inc.', b, SE, 
+      t, p, 'Shrunk', `90% CI`) # Remove the CI for covariate tables since 90% corresponds to one-tailed for interventions
+    
+  colnames(appendix_table)[colnames(appendix_table) == "Shrunk"] <- "Shrunk (b)"
+    
+  align_spec <- c("l","l", "r", "r", "r", "r", "r", "r", "r")
+    
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = T)
+  
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+                 file = output_file_tex)
+  
+  # Print appendix
+  print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  ### Part 3: Subset for plotting
+  plot_df <- results_df %>%
+   filter(Condition %in% keep_conditions) %>%  
+   dplyr::select(Condition, b, Lower_ci, Upper_ci) 
+  
+  return(list(full = full_info, appendix = appendix_table, plot = plot_df, appendix_xtable = appendix_xtable))
+}
+
+```
+
+```{r, Helper Function - LM One-Tailed for Binary DV}
+
+#### Tables - LM one-tailed #### 
+
+# Function:
+format_lm_bin_output_onetailed <- function(model1, model2,
+                                output_file_tex = "results_table.tex", 
+                                prefix = "condition") {
+  
+  # Row names from model output
+  term_names <- rownames(model1)
+  
+  # Identify intervention rows only
+  is_intervention <- grepl(paste0("^", prefix), term_names)
+  
+  # Step 1: Calculate one-tailed p only for intervention effects (not intercept or any covariates)
+  tvals <- model1[, "t value"]
+  p_two <- model1[, "Pr(>|t|)"]
+  
+  p_one <- ifelse(tvals > 0, p_two / 2, 1 - (p_two / 2)) # If pos, divide p by 2, if neg (opposite of proposed direction) 1-(p/2)
+  
+  # Final p: one-tailed for interventions (two-tailed for intercept or any covariates)
+  p_final <- ifelse(is_intervention, p_one, p_two)
+  
+  # Step 2: Extract and adjust raw model results
+  results_df <- data.frame(
+    Term = term_names,
+    Condition = gsub(paste0("^", prefix), "", term_names),
+    b = model1[, "Estimate"],
+    β = model2$coefficients,
+    SE = model1[, "Std. Error"],
+    t = tvals,
+    p_two = p_two,
+    p_one = p_one,
+    p_final = p_final,
+    is_intervention = is_intervention,
+    Lower_ci = confint(model1, level = 0.90)[, 1],
+    Upper_ci = confint(model1, level = 0.90)[, 2]
+  )
+  
+   rownames(results_df) <- NULL
+  
+  ### Part 1: Full data frame 
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = case_when(
+        Term == "(Intercept)" ~ "(Intercept)",
+        is_intervention ~ dplyr::recode(Condition, !!!variable_labels),
+        TRUE ~ dplyr::recode(Term, !!!variable_labels)
+      ),
+      'PP Inc.' = clean_round(b*100), 
+      b = clean_round(b),
+      β = clean_round(β),
+      SE = clean_round(SE),
+      t = clean_round(t),
+      p = ifelse(p_final < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_final))),
+      Lower_ci = clean_round(Lower_ci),
+      Upper_ci = clean_round(Upper_ci),
+      `90% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+    ) %>%
+    dplyr::select(
+      Variable, 'PP Inc.', b, SE, 
+      t, p,`90% CI`) # Remove the CI for covariate tables since 90% only corresponds to one-tailed tests for interventions
+    
+  align_spec <- c("l","l", "r", "r", "r", "r", "r", "r")
+    
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = T)
+  
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+                 file = output_file_tex)
+  
+  # Print appendix
+  print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  ### Part 3: Subset for plotting
+  plot_df <- results_df %>%
+   filter(Condition %in% keep_conditions) %>%  
+   dplyr::select(Condition, b, Lower_ci, Upper_ci) 
+  
+  return(list(full = full_info, appendix = appendix_table, plot = plot_df, appendix_xtable = appendix_xtable))
+}
+
+```
+
+# LM Two-Tailed
+
+```{r, Helper Function - LM Two-Tailed}
+
+#### Tables - LM two-tailed #### 
+
+# Function:
+format_lm_output_twotailed <- function(model1, model2, # model 1 unstand data, model 2 stand data
+                                output_file_tex = "results_table.tex", 
+                                prefix = "condition") {
+  
+  # Step 1: Extract and adjust raw model results
+  results_df <- data.frame(
+    Condition = gsub(prefix, "", rownames(model1)),
+    b = model1[, "Estimate"],
+    β = model2$coefficients,
+    SE = model1[, "Std. Error"],
+    t = model1[, "t value"],
+    p = model1[, "Pr(>|t|)"],  
+    Lower_ci = confint(model1, level = 0.95)[, 1],
+    Upper_ci = confint(model1, level = 0.95)[, 2]
+  )
+  
+   rownames(results_df) <- NULL
+  
+  ### Part 1: Full data frame 
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = dplyr::recode(Condition, !!!variable_labels), # Edit variable names
+      b = clean_round(b),
+      # b = sprintf("%.3f", b), # Use for smaller coefficients 
+      β = clean_round(β),
+      SE = clean_round(SE),
+      t = clean_round(t),
+      p = ifelse(p < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p))), 
+      Lower_ci = clean_round(Lower_ci), # CI in brackets
+      Upper_ci = clean_round(Upper_ci),
+      `95% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+) %>%
+    dplyr::select(Variable,
+           b, SE, t, p,
+           `95% CI`)
+  
+  align_spec <- c("l","l", "r", "r", "r", "r", "r")
+  
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = T)
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+                 file = output_file_tex)
+  
+ # Print appendix
+print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  ### Part 3: Subset for plotting
+  plot_df <- results_df %>%
+   filter(Condition %in% keep_conditions) %>%  
+   dplyr::select(Condition, b, Lower_ci, Upper_ci)
+  
+  return(list(full = full_info, appendix = appendix_table, plot = plot_df, appendix_xtable = appendix_xtable))
+}
+
+```
+
+```{r, Helper Function - LM Two-Tailed for Binary DV}
+
+#### Tables - LM two-tailed #### 
+
+# Function:
+format_lm_bin_output_twotailed <- function(model1, model2,
+                                output_file_tex = "results_table.tex", 
+                                prefix = "condition") {
+  
+  # Step 1: Extract and adjust raw model results
+  results_df <- data.frame(
+    Condition = gsub(prefix, "", rownames(model1)),
+    b = model1[, "Estimate"],
+    β = model2$coefficients,
+    SE = model1[, "Std. Error"],
+    t = model1[, "t value"],
+    p = model1[, "Pr(>|t|)"],  
+    Lower_ci = confint(model1, level = 0.95)[, 1],
+    Upper_ci = confint(model1, level = 0.95)[, 2]
+  )
+  
+   rownames(results_df) <- NULL
+  
+  ### Part 1: Full data frame 
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = dplyr::recode(Condition, !!!variable_labels), # Edit variable names
+      'PP Inc.' = clean_round(b*100), 
+      b = clean_round(b),  
+      β = clean_round(β),  
+      SE = clean_round(SE),
+      t = clean_round(t),
+      p = ifelse(p < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p))), 
+      Lower_ci = clean_round(Lower_ci), # CI in brackets
+      Upper_ci = clean_round(Upper_ci),
+      `95% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+) %>%
+    dplyr::select(Variable,
+           'PP Inc.', b, SE, t, p, 
+           `95% CI`)
+  
+  align_spec <- c("l","l", "r", "r", "r", "r", "r", "r")
+    
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = T)
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+                 file = output_file_tex)
+  
+  # Print appendix
+  print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  ### Part 3: Subset for plotting
+  plot_df <- results_df %>%
+   filter(Condition %in% keep_conditions) %>%  
+   dplyr::select(Condition, b, Lower_ci, Upper_ci)
+  
+  return(list(full = full_info, appendix = appendix_table, plot = plot_df, appendix_xtable = appendix_xtable))
+}
+
+```
+
+##
+
+# GLM One-Tailed
+
+```{r, Helper Function - GLM One-Tailed}
+
+#### Tables - GLM one-tailed #### 
+
+# Function:
+format_logit_output_onetailed <- function(model, 
+                                output_file_tex = "results_table.tex", 
+                                prefix = "condition") {
+  
+  
+  
+  # Row names from model output
+  term_names <- rownames(model)
+  
+  # Identify intervention rows only
+  is_intervention <- grepl(paste0("^", prefix), term_names)
+  
+  # Step 1: Calculate one-tailed p only for intervention effects (not intercept or any covariates)
+  zvals <- model[, "z value"]
+  p_two <- model[, "Pr(>|z|)"]
+  
+  p_one <- ifelse(zvals > 0, p_two / 2, 1 - (p_two / 2)) # If pos, divide p by 2, if neg (opposite of proposed direction) 1-(p/2)
+  
+  # Final p: one-tailed for interventions (two-tailed for intercept or any covariates)
+  p_final <- ifelse(is_intervention, p_one, p_two)
+  
+  # Step 2: Extract and adjust raw model results
+  results_df <- data.frame(
+    Term = term_names,
+    Condition = gsub(paste0("^", prefix), "", term_names),
+    Log_Odds = model[, "Estimate"],
+    SE_LO = model[, "Std. Error"],
+    z = model[, "z value"],
+    p_two = p_two,
+    p_one = p_one,
+    p_final = p_final,
+    is_intervention = is_intervention,
+    Lower_ci_LO = confint(model, level = 0.90)[, 1],
+    Upper_ci_LO = confint(model, level = 0.90)[, 2]
+  )
+  
+   rownames(results_df) <- NULL
+  
+  # Step 4: Convert log-odds to odds ratios
+  results_df$OR <- exp(results_df$Log_Odds)
+  results_df$Lower_ci <- exp(results_df$Lower_ci_LO)
+  results_df$Upper_ci <- exp(results_df$Upper_ci_LO)
+  results_df$d <- logoddsratio_to_d(results_df$Log_Odds) # Do not need to report since OR is already an effect size
+  
+  ### Part 1: Full data frame 
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = case_when(
+        Term == "(Intercept)" ~ "(Intercept)",
+        is_intervention ~ dplyr::recode(Condition, !!!variable_labels),
+        TRUE ~ dplyr::recode(Term, !!!variable_labels)
+      ),
+      Log_Odds = sprintf("%.2f", Log_Odds), # Round
+      OR = sprintf("%.2f", OR),  
+      SE_LO = sprintf("%.2f", SE_LO),
+      z = sprintf("%.2f", z),
+      p = ifelse(p_final < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p_final))), # Use one-tailed
+      Lower_ci = sprintf("%.2f", Lower_ci), # CI in brackets
+      Upper_ci = sprintf("%.2f", Upper_ci),
+      `90% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+) %>%
+    dplyr::select(Variable,
+           OR, z, p,
+           `90% CI`) # Remove the CI for covariate tables since 90% only corresponds to one-tailed tests for interventions
+  
+  align_spec <- c("l", "l", "r", "r", "r", "r")
+  
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = T)
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+                 file = output_file_tex)
+  
+  # Print appendix
+  print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  # No plot needed
+  
+  return(list(full = full_info, appendix = appendix_table, appendix_xtable = appendix_xtable))
+}
+
+```
+
+# GLM Two-Tailed
+
+```{r, Helper Function - GLM Two-Tailed}
+
+#### Tables - GLM two-tailed #### 
+
+# Function:
+format_logit_output_twotailed <- function(model, 
+                                output_file_tex = "results_table.tex", 
+                                prefix = "condition") {
+  
+  # Step 1: Extract and adjust raw model results
+  results_df <- data.frame(
+    Condition = gsub(prefix, "", rownames(model)),
+    Log_Odds = model[, "Estimate"],
+    SE_LO = model[, "Std. Error"],
+    z = model[, "z value"],
+    p = model[, "Pr(>|z|)"], 
+    Lower_ci_LO = confint(model, level = 0.95)[, 1],
+    Upper_ci_LO = confint(model, level = 0.95)[, 2]
+  )
+  
+   rownames(results_df) <- NULL
+  
+  # Step 3: Convert log-odds to odds ratios
+  results_df$OR <- exp(results_df$Log_Odds)
+  results_df$Lower_ci <- exp(results_df$Lower_ci_LO)
+  results_df$Upper_ci <- exp(results_df$Upper_ci_LO)
+  results_df$d <- logoddsratio_to_d(results_df$Log_Odds)
+  
+  ### Part 1: Full data frame 
+  full_info <- results_df
+  
+  ### Part 2: Cleaned version for appendix
+  appendix_table <- results_df %>%
+    mutate(
+      Variable = dplyr::recode(Condition, !!!variable_labels), # Edit variable names
+      Log_Odds = sprintf("%.2f", Log_Odds), # Round
+      OR = sprintf("%.2f", OR),  
+      SE_LO = sprintf("%.2f", SE_LO),
+      z = sprintf("%.2f", z),
+      p = ifelse(p < 0.001, "<.001", sub("^0\\.", ".", sprintf("%.3f", p))), 
+      Lower_ci = sprintf("%.2f", Lower_ci), # CI in brackets
+      Upper_ci = sprintf("%.2f", Upper_ci),
+      `95% CI` = paste0("[", Lower_ci, ", ", Upper_ci, "]")
+) %>%
+    dplyr::select(Variable,
+           OR, z, p,
+           Shrunk_OR, `95% CI`) # Just keep what's needed
+
+  align_spec <- c("l", "l", "r", "r", "r", "r", "r")
+  
+  colnames(appendix_table)[colnames(appendix_table) == "Shrunk_OR"] <- "Shrunk (OR)"
+  
+  appendix_xtable <- xtable(appendix_table, align = align_spec, booktabs = T)
+  capture.output(print.xtable(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, floating = FALSE),
+                 file = output_file_tex)
+  
+  # Print appendix
+  print(appendix_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+  # No plot needed
+  
+  return(list(full = full_info, appendix = appendix_table, appendix_xtable = appendix_xtable))
+}
+
+```
+
+##
+
+# ANOVA 
+
+```{r, Format ANOVA from regression}
+
+format_anova_type3_to_latex <- function(model,
+                                       output_file_tex = NULL,  # NULL = don't save
+                                       include_intercept = TRUE) {
+
+  # Type III ANOVA
+  a3 <- car::Anova(model, type = "III")
+  tab <- as.data.frame(a3)
+  tab$Term <- rownames(tab)
+  rownames(tab) <- NULL
+
+  # Optionally drop intercept
+  if (!include_intercept) {
+    tab <- tab %>% dplyr::filter(Term != "(Intercept)")
+  }
+
+  # Build table in your style
+  appendix_table <- tab %>%
+    dplyr::mutate(
+      Variable = dplyr::recode(Term, !!!variable_labels),
+      `Sum Sq` = clean_round(`Sum Sq`),
+      df = clean_round(Df),
+      `F` = ifelse(is.na(`F value`), "", clean_round(`F value`)),
+      p = dplyr::case_when(
+        is.na(`Pr(>F)`) ~ "",
+        `Pr(>F)` < 0.001 ~ "<.001",
+        TRUE ~ sub("^0\\.", ".", sprintf("%.3f", `Pr(>F)`))
+      )
+    ) %>%
+    dplyr::select(Variable, `Sum Sq`, df, `F`, p)
+
+  # xtable align: first entry is for rownames (even if excluded)
+  align_spec <- c("l", "l", "r", "r", "r", "r")
+
+  appendix_xtable <- xtable::xtable(appendix_table, align = align_spec, booktabs = TRUE)
+
+  tex_lines <- capture.output(
+    print(appendix_xtable,
+          include.rownames = FALSE,
+          sanitize.colnames.function = identity,
+          sanitize.text.function = identity,
+          floating = FALSE)
+  )
+  tex_text <- paste(tex_lines, collapse = "\n")
+
+  # Print 
+  cat(tex_text, sep = "\n")
+
+  # Optionally save
+  if (!is.null(output_file_tex)) {
+    writeLines(tex_lines, con = output_file_tex)
+  }
+
+  return(list(
+    appendix = appendix_table,
+    appendix_xtable = appendix_xtable,
+    latex = tex_text
+  ))
+}
+
+```
+
+##
+
+# Mediations
+
+```{r, Helper Function - Mediation Formatting}
+
+#### Tables - Mediations #### 
+
+# For mediations
+format_mediation_output <- function(mediation_model, mediator_name) {
+  
+  # Extract estimates and confidence intervals
+  estimates <- data.frame(
+    Effect = c("ACME", "ADE", "Total Effect", "Prop. Mediated"),
+    Estimate = c(
+      mediation_model$d.avg,      # ACME (indirect)
+      mediation_model$z.avg,      # ADE (direct)
+      mediation_model$tau.coef,   # Total effect
+      mediation_model$n.avg       # Prop. Mediated (average)
+    ),
+    LowerCI = c(
+      mediation_model$d.avg.ci[1],
+      mediation_model$z.avg.ci[1],
+      mediation_model$tau.ci[1],
+      mediation_model$n.avg.ci[1]
+    ),
+    UpperCI = c(
+      mediation_model$d.avg.ci[2],
+      mediation_model$z.avg.ci[2],
+      mediation_model$tau.ci[2],
+      mediation_model$n.avg.ci[2]
+    ),
+    p_value = c(
+      mediation_model$d.avg.p,
+      mediation_model$z.avg.p,
+      mediation_model$tau.p,
+      mediation_model$n.avg.p
+    )
+  )
+  
+  # Round numerical columns
+  estimates$Estimate <- clean_round(estimates$Estimate)
+  estimates$LowerCI  <- clean_round(estimates$LowerCI)
+  estimates$UpperCI  <- clean_round(estimates$UpperCI)
+  
+  # Format p-values
+  format_p_value <- function(p) {
+    if (is.na(p)) {
+      return("")
+    } else if (p < 0.001) {
+      return("<.001")
+    } else {
+      return(sub("^0\\.", ".", sprintf("%.3f", p)))
+    }
+  }
+  
+  estimates$p_value <- sapply(estimates$p_value, format_p_value)
+  
+  # Select and rename columns 
+  estimates <- estimates[, c("Effect", "Estimate", "LowerCI", "UpperCI", "p_value")]
+  colnames(estimates) <- c("Effect", "Estimate", "95 % Lower", "95 % Upper", "p")
+
+  # Define alignment and digits for xtable
+  align_spec <- c("l", "l", "r", "r", "r", "r")
+
+  appendix_xtable <- xtable(
+    estimates,
+    align = align_spec,
+    booktabs = TRUE
+  )
+  
+  capture.output(
+    print.xtable(
+      appendix_xtable,
+      include.rownames = FALSE,
+      sanitize.colnames.function = identity,
+      floating = FALSE
+    )
+  )
+
+  return(appendix_xtable)
+}
+  
+```
+
+```{r, Helper Function - Sensivity Analyses}
+
+### Sensitivity Analyses ###
+
+sensitivity_plot <- function(data, X, M, Y, model = c("lm", "glm"), condition_var = "condition", 
+                             treatment_condition = "CorrectingMisperceptions") {
+    data <- data[!is.na(data[[M]]),]
+    
+    mx <- as.formula(paste0(M, " ~ ", X))
+    ymx <- as.formula(paste0(Y, " ~ ", M, " + ", X))
+    
+    if (model == "lm") {
+        fit_mx <- lm(mx, data = data)
+        fit_ymx <- lm(ymx, data = data)
+    } else if (model == "glm") {
+        fit_mx <- lm(mx, data = data)
+        fit_ymx <- glm(ymx, data = data, family = binomial(link = "probit"))
+    }
+    
+    fit_mx$call$formula <- mx
+    fit_ymx$call$formula <- ymx
+    
+    med.out <- mediate(fit_mx, fit_ymx, treat = condition_var, mediator = M, control.value = "ControlCondition", treat.value = treatment_condition, robustSE = TRUE, sims = 100)
+    print(1)
+    print(summary(med.out))
+    print(2)
+    sens.out <- medsens(med.out, rho.by = 0.05, effect.type = "indirect", sims = 100)
+    print(summary(sens.out))
+    
+    pdf(file = paste0(M, "_mediation.pdf"))
+    plot(sens.out)
+    dev.off()
+}
+
+X <- "condition"
+
+```
+
+##
+
+# Lee Bounds
+
+```{r, Helper Function - Lee Bounds}
+
+# Function to compute Lee bounds for one treatment and one outcome
+lee_bounds_simple <- function(data, outcome, treat, control = "ControlCondition") {
+  
+  # Keep only treatment and control rows
+  df <- data %>%
+    filter(condition %in% c(control, treat)) %>%
+    mutate(
+      T = ifelse(condition == treat, 1, 0),
+      observed = Finished == "True" & !is.na(.data[[outcome]]) # Value observed if finished the survey and if have a value for the outcome
+    )
+  
+  # Compute retention rates
+  r_t <- mean(df$observed[df$T == 1])
+  r_c <- mean(df$observed[df$T == 0])
+  
+  # Keep only observed cases for trimming
+  df_obs <- df %>% filter(observed)
+  
+  # Actual untrimmed estimate from observed data
+  actual_est <- coef(lm(df_obs[[outcome]] ~ df_obs$T))[2]
+  
+  # If retention is identical, bounds equal the original estimate
+  if (abs(r_t - r_c) < 1e-6) {
+    return(data.frame(
+      treatment = treat,
+      outcome = outcome,
+      actual_estimate = actual_est,
+      lower_bound = actual_est,
+      upper_bound = actual_est
+    ))
+  }
+  
+  # Figure out which group to trim
+  if (r_t > r_c) {
+    trim_group <- 1
+    trim_prop <- 1 - (r_c / r_t)
+  } else {
+    trim_group <- 0
+    trim_prop <- 1 - (r_t / r_c)
+  }
+  
+  # Helper function to trim low or high values
+  trim_data <- function(direction) {
+    
+    d_trim <- df_obs %>%
+      filter(T == trim_group) %>%
+      arrange(.data[[outcome]])
+    
+    d_keep <- df_obs %>%
+      filter(T != trim_group)
+    
+    n <- nrow(d_trim)
+    k <- floor(trim_prop * n)
+    
+    if (k == 0) {
+      return(bind_rows(d_keep, d_trim))
+    }
+    
+    if (direction == "low") {
+      d_trim <- d_trim[(k + 1):n, ]
+    } else {
+      d_trim <- d_trim[1:(n - k), ]
+    }
+    
+    bind_rows(d_keep, d_trim)
+  }
+  
+  # Create lower and upper bound datasets
+  if (trim_group == 1) {
+    d_lb <- trim_data("high")
+    d_ub <- trim_data("low")
+  } else {
+    d_lb <- trim_data("low")
+    d_ub <- trim_data("high")
+  }
+  
+  # Estimate the bound effects
+  lb <- coef(lm(d_lb[[outcome]] ~ d_lb$T))[2]
+  ub <- coef(lm(d_ub[[outcome]] ~ d_ub$T))[2]
+  
+  # Return results
+  data.frame(
+    treatment = treat,
+    outcome = outcome,
+    actual_estimate = actual_est,
+    lower_bound = lb,
+    upper_bound = ub
+  )
+}
+
+```
+
+

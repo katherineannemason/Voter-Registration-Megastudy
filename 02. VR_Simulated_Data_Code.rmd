@@ -1,0 +1,594 @@
+---
+title: "Voter Registration Simulated Data Code"
+author: "Katherine Mason"
+date: "2025-12-16"
+output: html_document
+---
+
+```{r, Load and Prepare (Real) Data}
+
+library(dplyr)
+
+df <- read.csv("Voter_Reg_STRICT.csv")
+head(df)
+nrow(df) # 12927
+
+## Prepare variables ##
+
+# Set reference level as the control conditon
+df$condition <- relevel(as.factor(df$condition), ref = "ControlCondition")
+
+# Make sure link click, register, and vote variables are factor
+df$linkClicked <- as.factor(df$linkClicked)
+df$register <- as.factor(df$register)
+df$vote <- as.factor(df$vote)
+
+```
+
+```{r, Calculate Means and Proportions from Real Data}
+
+# Conditions
+conditions_table <- table(df$condition)
+conditions <- names(conditions_table)
+conditions
+
+# Condition proportions
+prob_conditions <- prop.table(conditions_table)
+prob_conditions
+
+# States 
+state_table <- table(df$state)
+states <- names(state_table)
+states
+
+state_counts <- as.numeric(state_table)
+probs_state <- state_counts / sum(state_counts)
+probs_state
+
+# Simulate data to demo analysis code functionality
+# n and overall Ms and SDs match those of the true data 
+# All else random, and as such, results will not match those reported in the main paper and supplement 
+
+# Seed
+set.seed(1234)
+
+### Parameters ### 
+
+n <- nrow(df)
+
+## Continuous demographics ##
+
+# Age
+age_mean <- mean(df$age, na.rm = T)
+age_sd   <- sd(df$age, na.rm = T)
+
+# Income
+income_mean <- mean(df$income, na.rm = T)
+income_sd   <- sd(df$income, na.rm = T)
+
+# Education
+edu_mean <- mean(df$edu, na.rm = T)
+edu_sd   <- sd(df$edu, na.rm = T)
+
+# Ideology scale (social and economic)
+ide_mean <- mean(df$ide, na.rm = T)
+ide_sd   <- sd(df$ide, na.rm = T)
+
+## Additional continuous predictors ##
+
+# Pre-intervention intention to register
+pre_intention_mean <- mean(df$pre_intention, na.rm = T)
+pre_intention_sd <- sd(df$pre_intention, na.rm = T)
+
+# Political interest
+interest_mean <- mean(df$interest, na.rm = T)
+interest_sd <- sd(df$interest, na.rm = T)
+
+# Political knowledge 
+knowledge_mean <- mean(df$knowledge, na.rm = T)
+knowledge_sd <- sd(df$knowledge, na.rm = T)
+
+# COVI
+COVI_mean <- mean(df$FinalCOVI, na.rm = T)
+COVI_sd <-  sd(df$FinalCOVI, na.rm = T)
+
+# Continuous DVs 
+
+# Voting Intentions
+voteInt_mean <- mean(df$voteInt, na.rm = T)
+voteInt_sd <- sd(df$voteInt, na.rm = T)
+
+# Trust in branches of government scale (exec, legis, and jud)
+trust_branch_mean <- mean(df$trust_branch, na.rm = T)
+trust_branch_sd <- sd(df$trust_branch, na.rm = T)
+
+# Trust in elections
+trust_elect_mean <- mean(df$trust_elect, na.rm = T)
+trust_elect_sd <- sd(df$trust_elect, na.rm = T)
+
+# General trust (aggregate)
+trust_agg_mean <- mean(df$trust_agg, na.rm = T)
+trust_agg_sd <- sd(df$trust_agg, na.rm = T)
+
+# Efficacy scale (efficacy items 1, 2, and 3)
+efficacy_mean <- mean(df$efficacy, na.rm = T)
+efficacy_sd <- sd(df$efficacy, na.rm = T)
+
+# Norms scale (norms items 1 and 2)
+norms_mean <- mean(df$norms, na.rm = T)
+norms_sd <- sd(df$norms, na.rm = T)
+
+## Binary DVs ##
+
+# Link click
+link_prob <- mean(df$linkClicked_n, na.rm = TRUE)
+link_prob
+
+# Registration
+register_prob <- mean(df$register_n, na.rm = TRUE)
+register_prob
+
+# Voter turnout
+vote_prob <- mean(df$vote_n, na.rm = TRUE)
+vote_prob
+
+# Confirmation of registration
+reg_confirm_ny_prob <- mean(df$reg_confirm_ny, na.rm = TRUE) # no yes
+reg_confirm_ny_prob
+
+reg_confirm_nl_prob <- mean(df$reg_confirm_nl, na.rm = TRUE) # no later
+reg_confirm_nl_prob
+
+```
+
+```{r, Simulate Data}
+
+# Function to simulate categorical variables using observed proportions
+sample_like <- function(x, n) {
+  sample(
+    x,
+    size = n,
+    replace = TRUE
+  )
+}
+
+### Simulation ### 
+
+sim_data <- tibble(
+  
+  # Continuous variables
+  age = rnorm(n, mean = age_mean, sd = age_sd),
+  income = rnorm(n, mean = income_mean, sd = income_sd),
+  edu = rnorm(n, mean = edu_mean, sd = edu_sd),
+  ide = rnorm(n, mean = ide_mean, sd = ide_sd),
+  pre_intention = rnorm(n, mean = pre_intention_mean, sd = pre_intention_sd),
+  interest = rnorm(n, mean = interest_mean, sd = interest_sd),
+  knowledge = rnorm(n, mean = knowledge_mean, sd = knowledge_sd),
+  COVI = rnorm(n, mean = COVI_mean, sd = COVI_sd),
+  trust_branch = rnorm(n, mean = trust_branch_mean, sd = trust_branch_sd),
+  trust_elect = rnorm(n, mean = trust_elect_mean, sd = trust_elect_sd),
+  trust_agg = rnorm(n, mean = trust_agg_mean, sd = trust_agg_sd),
+  efficacy = rnorm(n, mean = efficacy_mean, sd = efficacy_sd),
+  norms = rnorm(n, mean = norms_mean, sd = norms_sd),
+  voteInt = rnorm(n, mean = voteInt_mean, sd = voteInt_sd),
+
+  # Categorical variables 
+  
+  # Condition (11)
+  condition = factor(sample_like(df$condition, n)),
+
+  # State
+  state = sample_like(df$state, n),
+  
+  # Swing state status
+  swing = sample_like(df$swing, n),
+
+  # Region
+  region = sample_like(df$region, n),
+  
+  # Gender
+  gender_r = sample_like(df$gender_r, n),
+  
+  # Race (all categories)
+  race = sample_like(df$race, n),
+  
+  # Candidate preference (binary)
+  vote_today_bin = sample_like(df$vote_today_bin, n),
+  
+  # Link clicks
+  linkClicked_n = rbinom(n, 1, link_prob),
+  
+  # Registration
+  register_n = rbinom(n, 1, register_prob),
+
+  # Voting
+  vote_n = rbinom(n, 1, vote_prob),
+  
+  # Confirmation of registration
+  reg_confirm_ny = rbinom(n, 1, reg_confirm_ny_prob),
+  
+  reg_confirm_nl = rbinom(n, 1, reg_confirm_nl_prob) 
+  )
+
+
+# Add ID
+sim_data <- dplyr::mutate(sim_data, ResponseId = row_number()) %>%
+  relocate(ResponseId, .before=age)
+
+# Check
+head(sim_data)
+
+```
+
+```{r, Clean Categorical Variables}
+
+### Condition ### 
+
+table(sim_data$condition) 
+
+# Control vs intervention (binary)
+sim_data$condition_binary <- ifelse(sim_data$condition == "ControlCondition", "ControlCondition", "Intervention")
+sim_data$condition_binary <- factor(sim_data$condition_binary, levels = c("ControlCondition", "Intervention"))
+table(sim_data$condition_binary)
+
+### Gender ### 
+
+table(sim_data$gender_r)
+
+# Binary
+sim_data$gend_bin <- ifelse(sim_data$gender_r == "Man", 0, 
+                            ifelse(sim_data$gender_r == "Woman", 1, NA)) %>%
+  as.numeric()
+
+table(sim_data$gend_bin)
+
+# Recode gender to get women = 0 for interactions
+sim_data$gend_bin_r <- ifelse(sim_data$gend_bin == 1,0,1)
+table(sim_data$gend_bin)
+table(sim_data$gend_bin_r)
+
+# Effects coded 
+sim_data$gend_e <- ifelse(sim_data$gender_r == "Man", -.5, 
+                          ifelse(sim_data$gender_r == "Woman", .5, NA)) %>%
+  as.numeric() # Effects codes must be numeric
+
+table(sim_data$gend_e)
+
+
+### Race ###
+
+table(sim_data$race)
+
+# Combine ME since both less than .5% of sample and models not estimating
+sim_data <- sim_data %>%
+  mutate(race_me_combined = case_when(
+    race == "White" ~ "White",
+    race == "Black" ~ "Black",
+    race == "Latinx" ~ "Latinx",
+    race == "Asian" ~ "Asian",
+    race == "Native" ~ "Native",
+    race == "Multiracial" ~ "Multiracial",
+    race %in% c("MEA", "MEnonA") ~ "ME",  
+    race == "Other" ~ "Other",
+    TRUE ~ NA_character_
+    ) %>%
+    as.factor())
+
+sim_data$race_me_combined <- factor(sim_data$race_me_combined, 
+                                     levels = c("White", "Asian", "Black", "Latinx", "ME", "Native", "Multiracial", "Other"))
+
+table(sim_data$race_me_combined) 
+
+# Simple effects code race variable manually (use combined ME for sake of model convergence)
+
+# Race list
+race_loop <- as.factor(c("White", "Asian", "Black", "Latinx", "ME", "Native", "Multiracial", "Other"))
+
+# Loop through to create effects coding
+for (race_me_combined in race_loop) {
+  effect_var <- paste0(race_me_combined, "_E")
+  sim_data[[effect_var]] <- ifelse(sim_data$race_me_combined == race_me_combined, 7/8, -1/8)
+  mean_val <- mean(sim_data[[effect_var]], na.rm = TRUE)
+  cat(race_me_combined, "Effect:", mean_val, "\n")
+}
+
+# Binary race (white versus non-white)
+sim_data <- sim_data %>%
+  mutate(race_bin = case_when(
+    race == "White" ~ "0",
+    race == "Black" ~ "1",
+    race == "Latinx" ~ "1",
+    race == "Asian" ~ "1",
+    race == "Native" ~ "1",
+    race == "Multiracial" ~ "1",
+    race == "MEA" ~ "1",  
+    race == "MEnonA" ~ "1",
+    race == "Other" ~ "1",
+    TRUE ~ NA_character_
+    ) %>%
+    as.factor())
+
+# Reverse score
+sim_data$race_bin_r <- ifelse(sim_data$race_bin == 0,1,0)
+
+table(sim_data$race_bin)
+table(sim_data$race_bin_r)
+
+# Effects code binary race
+
+sim_data$race_bin_e <- ifelse(sim_data$race_bin == "0", -.5, 
+                       ifelse(sim_data$race_bin == "1", .5, NA))
+
+sim_data$race_bin_e <- as.numeric(sim_data$race_bin_e)
+
+table(sim_data$race_bin_e)
+
+###  Swing state ### 
+
+# Reverse score
+sim_data$swing_r <- ifelse(sim_data$swing == 0,1,0)
+table(sim_data$swing)
+table(sim_data$swing_r)
+
+# Effects code 
+sim_data$swing_E <- ifelse(sim_data$swing == 0,-.5,.5)
+table(sim_data$swing)
+table(sim_data$swing_E)
+
+### Link clicks ### 
+
+# Make a factor version for logistic regressions
+sim_data$linkClicked <- as.factor(sim_data$linkClicked_n)
+
+table(sim_data$linkClicked_n)
+table(sim_data$linkClicked)
+
+### Registration ### 
+
+# Make a factor version for logistic regressions
+sim_data$register <- as.factor(sim_data$register_n)
+
+table(sim_data$register_n)
+table(sim_data$register)
+
+### Voting ### 
+
+# Make a factor version for logistic regressions
+sim_data$vote <- as.factor(sim_data$vote_n)
+
+table(sim_data$vote_n)
+table(sim_data$vote)
+
+```
+
+```{r, Center Continuous Variables}
+
+### Age ###
+
+# Center age
+sim_data$age_c <- scale(sim_data$age, center = TRUE, scale = FALSE)
+mean(sim_data$age_c, na.rm = TRUE) 
+
+# High and low age
+sim_data$age_low <- sim_data$age_c - (-sd(sim_data$age, na.rm = T)) # Using values from sim data
+sim_data$age_high <- sim_data$age_c - (sd(sim_data$age, na.rm = T))
+
+### Ideology ###
+
+# Make moderate the mid point 
+sim_data$ide_c <- sim_data$ide - 50
+
+# Liberal and conservative for simple effects
+sim_data$ide_low <- sim_data$ide_c - (-30)
+sim_data$ide_high <- sim_data$ide_c - (30)
+
+### Income ###
+
+# Center income
+sim_data$income_c <- scale(sim_data$income, center = TRUE, scale = FALSE)
+mean(sim_data$income_c, na.rm = TRUE) 
+
+# High and low income
+sim_data$income_low <- sim_data$income_c - (-sd(sim_data$income, na.rm = T))
+sim_data$income_high <- sim_data$income_c - (sd(sim_data$income, na.rm = T))
+
+### Education ###
+
+# Center education
+sim_data$edu_c <- scale(sim_data$edu, center = TRUE, scale = FALSE)
+mean(sim_data$edu_c, na.rm = TRUE) 
+
+# High and low education
+sim_data$edu_low <- sim_data$edu_c - (-sd(sim_data$edu, na.rm = T))
+sim_data$edu_high <- sim_data$edu_c - (sd(sim_data$edu, na.rm = T))
+
+### Pre-intention ###
+
+# Center pre-intention
+sim_data$pre_intention_c <- scale(sim_data$pre_intention, center = TRUE, scale = FALSE)
+mean(sim_data$pre_intention_c, na.rm = TRUE) 
+
+sim_data$pre_intention_low <- sim_data$pre_intention_c - (-sd(sim_data$pre_intention, na.rm = T))
+sim_data$pre_intention_high <- sim_data$pre_intention_c - (sd(sim_data$pre_intention, na.rm = T))
+
+### Interest ###
+
+# Center interest
+sim_data$interest_c <- scale(sim_data$interest, center = TRUE, scale = FALSE)
+mean(sim_data$interest_c, na.rm = TRUE) 
+
+# High and low interest
+sim_data$interest_low <- sim_data$interest_c - (-sd(sim_data$interest, na.rm = T))
+sim_data$interest_high <- sim_data$interest_c - (sd(sim_data$interest, na.rm = T))
+
+### Knowledge ###
+
+# Center knowledge
+sim_data$knowledge_c <- scale(sim_data$knowledge, center = TRUE, scale = FALSE)
+mean(sim_data$knowledge_c, na.rm = TRUE) 
+
+# High and low knowledge
+sim_data$knowledge_low <- sim_data$knowledge_c - (-sd(sim_data$knowledge, na.rm = T))
+sim_data$knowledge_high <- sim_data$knowledge_c - (sd(sim_data$knowledge, na.rm = T))
+
+### Trust in branches of government ###
+
+# Center trust in branches of government
+sim_data$trust_branch_c <- scale(sim_data$trust_branch, center = TRUE, scale = FALSE)
+mean(sim_data$trust_branch_c, na.rm = TRUE) 
+
+# High and low trust in branches of government
+sim_data$trust_branch_low <- sim_data$trust_branch_c - (-sd(sim_data$trust_branch, na.rm = T))
+sim_data$trust_branch_high <- sim_data$trust_branch_c - (sd(sim_data$trust_branch, na.rm = T))
+
+### Trust in fairness of elections ###
+
+# Center trust in fairness of elections
+sim_data$trust_elect_c <- scale(sim_data$trust_elect, center = TRUE, scale = FALSE)
+mean(sim_data$trust_elect_c, na.rm = TRUE) 
+
+# High and low trust in branches of government
+sim_data$trust_elect_low <- sim_data$trust_elect_c - (-sd(sim_data$trust_elect, na.rm = T))
+sim_data$trust_elect_high <- sim_data$trust_elect_c - (sd(sim_data$trust_elect, na.rm = T))
+
+### General trust measure ###
+
+# Center aggregate trust
+sim_data$trust_agg_c <- scale(sim_data$trust_agg, center = TRUE, scale = FALSE)
+mean(sim_data$trust_agg_c, na.rm = TRUE) 
+
+# High and low trust in branches of government
+sim_data$trust_agg_low <- sim_data$trust_agg_c - (-sd(sim_data$trust_agg, na.rm = T))
+sim_data$trust_agg_high <- sim_data$trust_agg_c - (sd(sim_data$trust_agg, na.rm = T))
+
+### Efficacy ###
+
+# Center efficacy
+sim_data$efficacy_c <- scale(sim_data$efficacy, center = TRUE, scale = FALSE)
+mean(sim_data$efficacy_c, na.rm = TRUE) 
+
+# High and low efficacy
+sim_data$efficacy_low <- sim_data$efficacy_c - (-sd(sim_data$efficacy, na.rm = T))
+sim_data$efficacy_high <- sim_data$efficacy_c - (sd(sim_data$efficacy, na.rm = T))
+
+### Norms ###
+
+# Center norms
+sim_data$norms_c <- scale(sim_data$norms, center = TRUE, scale = FALSE)
+mean(sim_data$norms_c, na.rm = TRUE) 
+
+# High and low efficacy
+sim_data$norms_low <- sim_data$norms_c - (-sd(sim_data$norms, na.rm = T))
+sim_data$norms_high <- sim_data$norms_c - (sd(sim_data$norms, na.rm = T))
+
+### COVI ###
+
+# Center COVI score
+sim_data$COVI_c <- scale(sim_data$COVI, center = TRUE, scale = FALSE)
+mean(sim_data$COVI_c, na.rm = TRUE) 
+
+# Low and high COVI
+sim_data$COVI_low <- sim_data$COVI_c - (-sd(sim_data$COVI, na.rm = T))
+sim_data$COVI_high <- sim_data$COVI_c - (sd(sim_data$COVI, na.rm = T))
+
+```
+
+```{r, Standardize}
+
+# Standardize continuous variables (do not center ideology)
+dvs_stand <- sim_data[, c("age_c", "income_c", "edu_c", "pre_intention_c", "interest_c", 
+                    "knowledge_c", "trust_branch_c", "trust_elect_c", "efficacy_c", 
+                    "trust_agg_c", "norms_c", "voteInt", "ide_c", "COVI_c", "linkClicked_n", 
+                    "register_n", "vote_n", "reg_confirm_ny", "reg_confirm_nl")]  %>%
+  mutate(
+    across(c("age_c", "income_c", "edu_c", "pre_intention_c", "interest_c", 
+             "knowledge_c", "trust_branch_c", "trust_elect_c", "efficacy_c", 
+             "trust_agg_c", "norms_c", "COVI_c", "voteInt", "linkClicked_n", 
+             "register_n", "vote_n"), ~ scale(.x, center = TRUE, scale = TRUE)[, 1])
+  )
+dvs_stand
+
+# Combine with non-standardized variables that we need to keep
+zsim_data <- cbind(sim_data[, c("ResponseId", "condition", "state", "gend_e", "gend_bin", "gend_bin_r", "ide_c", 
+                    "race_bin_e", "race_bin", "race_bin_r", "White_E", "Black_E", 
+                    "Latinx_E", "Asian_E", "ME_E", "Native_E", "Multiracial_E", 
+                    "Other_E", 'swing_E', 'swing', 'swing_r', "vote_today_bin", 
+                    "condition_binary","linkClicked", "register", "vote"), drop = TRUE], 
+  as.data.frame(dvs_stand)
+)
+
+# Standardize ideology (but do not center)
+zsim_data$ide_c <- zsim_data$ide_c/(sd(zsim_data$ide_c, na.rm = TRUE))
+sd(zsim_data$ide_c, na.rm = T)
+
+# Standardized low and high ideology
+
+# Equal to 30 points in unstandardized units
+highlowvalue <- 30/sd(sim_data$ide_c, na.rm = T) 
+
+zsim_data$ide_low <- zsim_data$ide_c - (-highlowvalue) # Equal to 30 points in unstandardized units
+zsim_data$ide_high <- zsim_data$ide_c - (highlowvalue) # Equal to 30 points in unstandardized units
+
+# Standardized high and low income
+zsim_data$income_low <- zsim_data$income_c - (-1)
+zsim_data$income_high <- zsim_data$income_c - (1)
+
+# Standardized high and low education
+zsim_data$edu_low <- zsim_data$edu_c - (-1)
+zsim_data$edu_high <- zsim_data$edu_c - (1)
+
+# Standardized high and low age
+zsim_data$age_low <- zsim_data$age_c - (-1)
+zsim_data$age_high <- zsim_data$age_c - (1)
+
+# Standardized high and low interest
+zsim_data$interest_low <- zsim_data$interest_c - (-1)
+zsim_data$interest_high <- zsim_data$interest_c - (1)
+
+# Standardized high and low political knowledge
+
+zsim_data$knowledge_low <- zsim_data$knowledge_c - (-1)
+zsim_data$knowledge_high <- zsim_data$knowledge_c - (1)
+
+# Standardized high and low trust in branches of government
+zsim_data$trust_branch_low <- zsim_data$trust_branch_c - (-1)
+zsim_data$trust_branch_high <- zsim_data$trust_branch_c - (1)
+
+# Standardized high and low trust in fairness of elections
+zsim_data$trust_elect_low <- zsim_data$trust_elect_c - (-1)
+zsim_data$trust_elect_high <- zsim_data$trust_elect_c - (1)
+
+# Standardized high and low generalized trust
+zsim_data$trust_agg_low <- zsim_data$trust_agg_c - (-1)
+zsim_data$trust_agg_high <- zsim_data$trust_agg_c - (1)
+
+# Standardized high and low efficacy
+zsim_data$efficacy_low <- zsim_data$efficacy_c - (-1)
+
+zsim_data$efficacy_high <- zsim_data$efficacy_c - (1)
+
+# Standardized high and low norms
+zsim_data$norms_low <- zsim_data$norms_c - (-1)
+zsim_data$norms_high <- zsim_data$norms_c - (1)
+
+# High and low COVI
+zsim_data$COVI_low <- zsim_data$COVI_c - (-1)
+zsim_data$COVI_high <- zsim_data$COVI_c - (1)
+
+# High and low pre-intervention intention to register
+zsim_data$pre_intention_low <- zsim_data$pre_intention_c - (-1)
+zsim_data$pre_intention_high <- zsim_data$pre_intention_c - (1)
+
+head(zsim_data)
+
+```
+
+```{r, Export}
+
+# Export simulated data
+
+write.csv(sim_data, file = "3. VR_Simulated_Data.csv")
+write.csv(zsim_data, file = "4. VR_Simulated_Data_Standard.csv")
+
+```
+

@@ -1,0 +1,958 @@
+---
+title: "Voter Registration Attrition Analyses"
+author: "Katherine Mason"
+format: html
+editor: source
+---
+
+#################################################### Prepare Data 
+
+```{r, Load packages}
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(psych)
+library(ltm)
+library(Hmisc)
+library(reticulate)
+library(nlme)
+library(ordinal)
+library(carData)
+library(car)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(clubSandwich)
+library(sandwich)
+library(CR2)
+library(lsmeans)
+library(stats)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(glmmTMB) 
+library(MASS)
+library(broom) 
+library(knitr)
+library(tools)
+library(sjstats)
+library(effectsize)
+library(pscl)
+library(logistf)
+library(lavaan)
+library(kableExtra)
+library(boot)
+library(margins)
+library(purrr)
+library(xtable)
+library(gt) 
+library(weights)
+library(mediation)
+library(QuantPsyc)
+library(lm.beta)
+library(parameters)
+library(esc)
+library(corrplot)
+library(ivreg)
+
+```
+
+```{r, Load and prepare data}
+
+# Load in the data set including those who were later removed for post-treatment attrition 
+df_preexclude <- read.csv("Voter_Reg_Pre_Exclude_Finished.csv")
+nrow(df_preexclude) # 14189 (compared to 12927 in the full sample)
+
+# Load in final data set
+df <- read.csv("Voter_Reg_STRICT.csv")
+nrow(df) # 12927
+
+## Prepare variables ##
+
+# Set reference level as the ControlCondition condition
+df_preexclude$condition <- relevel(as.factor(df_preexclude$condition), ref = "ControlCondition")
+
+# Make sure link click, register, and vote variables are factors for binary logistic regressions
+df_preexclude$linkClicked <- as.factor(df_preexclude$linkClicked)
+df_preexclude$register <- as.factor(df_preexclude$register)
+df_preexclude$vote <- as.factor(df_preexclude$vote)
+
+table(df_preexclude$linkClicked)
+table(df_preexclude$register)
+table(df_preexclude$vote)
+
+```
+
+############################################################################################################### 
+############################################### N Per Condition ############################################### 
+############################################################################################################### 
+
+```{r, N per condition}
+
+# N in each condition 
+condition_table <- df %>%
+  dplyr::rename ('Condition' = 'condition') %>%
+  count(Condition) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+condition_table
+
+# For appendix 
+condition_xtable <- xtable(condition_table, align = c("l", "l", "r", "r"), booktabs = T, include.rownames = FALSE, 
+                          sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+print.xtable(condition_xtable, include.rownames = FALSE)
+
+
+# N in treatment (all) vs. control
+conditionbin_table <- df %>%
+  dplyr::rename ('Condition' = 'condition') %>%
+  count(condition_binary) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+conditionbin_table
+
+```
+
+############################################################################################################## 
+######################################## Identify Source of Attrition ######################################## 
+############################################################################################################## 
+
+########################################### Condition on Attrition
+
+```{r, Attrition by condition and timing of dropout (crosstab)}
+
+# Variable looking at before link-click page, after link click page, and completed survey and reached debrief 
+df_preexclude$attrition_timing <- case_when(
+  
+  # Never reached the link-click page
+  is.na(df_preexclude$linkClicked) ~ "Dropped before link-click page",
+  
+  # Reached the link-click page but then dropped later
+  !is.na(df_preexclude$linkClicked) &
+    df_preexclude$Finished == "False" ~ "Dropped after link-click page",
+  
+  # Finished survey / saw debrief
+  df_preexclude$Finished == "True" ~ "Completed survey/debrief",
+  
+  TRUE ~ NA_character_
+)
+
+df_preexclude$attrition_timing <- factor(
+  df_preexclude$attrition_timing,
+  levels = c(
+    "Dropped before link-click page",
+    "Dropped after link-click page",
+    "Completed survey/debrief"
+  )
+)
+
+table(df_preexclude$attrition_timing, useNA = "always")
+
+# Attrition percentage
+attrition_perc <- df_preexclude %>%
+  count(condition, attrition_timing) %>%
+  group_by(condition) %>%
+  mutate(percent = 100 * n / sum(n)) %>%
+  ungroup() %>%
+  mutate(percent = round(percent, 1)) %>%
+  dplyr::select(-n) %>%
+  pivot_wider(
+    names_from = attrition_timing,
+    values_from = percent,
+    values_fill = 0
+  )
+
+attrition_perc
+
+# Merge counts with percentage
+attrition_pretty <- df_preexclude %>%
+  count(condition, attrition_timing) %>%
+  group_by(condition) %>%
+  mutate(percent = 100 * n / sum(n)) %>%
+  ungroup() %>%
+  mutate(
+    value = paste0(n, " (", sprintf("%.1f", percent), "\\%)")
+  ) %>%
+  dplyr::select(condition, attrition_timing, value) %>%
+  pivot_wider(
+    names_from = attrition_timing,
+    values_from = value,
+    values_fill = "0 (0.0\\%)"
+  ) %>%
+  mutate(condition = dplyr::recode(condition, !!!variable_labels)) %>%
+  rename(Condition = condition)
+
+attrition_pretty
+
+attrition_xtable <- xtable(attrition_pretty,align = c("l", "l", "r", "r", "r"))
+
+print.xtable(
+  attrition_xtable,
+  include.rownames = FALSE,
+  sanitize.text.function = identity,
+  sanitize.colnames.function = identity,
+  floating = FALSE
+)
+
+```
+
+```{r, Condition predicting whether Ps reached the first post-treatment outcome (link clicks)}
+
+# Use linkClicked variable itself, since there is no item-level missing
+# Timer is a good second option, but not ideal since does not collect data on people who reach a page but drop before advancing
+
+table(df_preexclude$linkClicked, useNA = "always") # 611 NA, no item-level missingness
+table(df$linkClicked, useNA = "always") # 0 NA
+
+# attrition_1: 0 = dropped before first outcome; 1 = reached first outcome or later
+# Variables after linkClicked, in survey order
+later_vars_1 <- c(
+  "reg_confirm", # All DVs after link click page
+  "voteInt",
+  "vote_today",
+  "trust_exec", # Trust, efficacy, and norms in no particular order (randomized)
+  "efficacy_1",
+  "norms_1",
+  "gender",
+  "party"
+)
+
+# Attrition before first DV (link clicks): reached first outcome = 1, dropped out before reaching = 0
+df_preexclude$attrition_1 <- ifelse(
+  is.na(df_preexclude$linkClicked) &
+    rowSums(!is.na(df_preexclude[, later_vars_1])) == 0,
+  0, 1
+) 
+
+table(df_preexclude$attrition_1, useNA = "always")
+# 611 drop out
+
+# Check whether those coded 1 have values for linkClicked and later vars
+View(df_preexclude[df_preexclude$attrition_1 == 1,
+  c("attrition_1", "linkClicked", "voteInt", "vote_today", "trust_exec",
+    "efficacy_1", "norms_1", "gender", "party", "Finished")
+]) # Yes (good)
+
+# Check whether those coded 0 are actually blank on linkClicked and later vars
+View(df_preexclude[df_preexclude$attrition_1 == 0,
+  c("attrition_1", "linkClicked", "voteInt", "vote_today", "trust_exec",
+    "efficacy_1", "norms_1", "gender", "party", "Finished")
+]) # Yes (good)
+
+table(df_preexclude$attrition_1, useNA = "always") # 611 = 0, 13578 = 1
+
+# Fit the model
+Attrition_Model_1 <- lm(attrition_1 ~ condition, data = df_preexclude)
+summary(Attrition_Model_1)
+
+Attrition_Model_1_robust <- coeftest(Attrition_Model_1, vcov = vcovHC(Attrition_Model_1, type = "HC3"))
+Attrition_Model_1_robust
+
+# Use two tailed lm function to format
+Attrition_Model_1_Results <- format_lm_output_twotailed(Attrition_Model_1_robust, Attrition_Model_1)
+
+# Outputs:
+Attrition_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Attrition_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+# Similar pattern to condition predicting Finished_n (below), indicating that
+# differential attrition by condition is already demonstrated before the first DV
+
+```
+
+```{r, Condition predicting total post-treatment study attrition}
+
+# Is there differential attrition by condition?
+
+# Fit the model
+Attrition_Model_2 <- lm(Finished_n ~ condition, data = df_preexclude)
+summary(Attrition_Model_2)
+
+Attrition_Model_2_robust <- coeftest(Attrition_Model_2, vcov = vcovHC(Attrition_Model_2, type = "HC3"))
+Attrition_Model_2_robust
+
+# Use two tailed lm function to format
+Attrition_Model_2_Results <- format_lm_output_twotailed(Attrition_Model_2_robust, Attrition_Model_2)
+
+# Outputs:
+Attrition_Model_2_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(Attrition_Model_2_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+
+########################################### Intervention Features on Attrition
+
+```{r, Predict attrition using condition features}
+
+# Read in intervention text
+Interventions <- read.xlsx("InterventionTEXT.xlsx")
+view(Interventions) 
+
+# Compute word count of each intervention
+Interventions$word_count <- stringr::str_count(Interventions$text, "\\S+")
+
+# Code whether there is a MC portion 
+Interventions <- Interventions %>%
+  mutate(mc = case_when(
+    condition == "ControlCondition" ~ 0,
+    condition == "CorrectingMisperceptions" ~ 0,
+    condition == "DistrustSalience" ~ 0,
+    condition == "DynamicNorms" ~ 0,
+    condition == "EscalatingCommitment" ~ 4,
+    condition == "ImplementationIntentions" ~ 0,
+    condition == "InterdependentConstrual" ~ 0,
+    condition == "MoralReasons" ~ 0,
+    condition == "PersonalImportance" ~ 2,
+    condition == "SelfGeneratedNorms" ~ 0,
+    condition == "SystemJustification" ~ 0,
+    TRUE ~ NA_real_  
+  ))
+  
+table(Interventions$mc, useNA = "always")
+
+
+# Code whether there is an open-ended portion (count)
+Interventions <- Interventions %>%
+  mutate(openend = case_when(
+    condition == "ControlCondition" ~ 0,
+    condition == "CorrectingMisperceptions" ~ 0,
+    condition == "DistrustSalience" ~ 0,
+    condition == "DynamicNorms" ~ 0,
+    condition == "EscalatingCommitment" ~ 2,
+    condition == "ImplementationIntentions" ~ 4,
+    condition == "InterdependentConstrual" ~ 0,
+    condition == "MoralReasons" ~ 1,
+    condition == "PersonalImportance" ~ 2,
+    condition == "SelfGeneratedNorms" ~ 3,
+    condition == "SystemJustification" ~ 0,
+    TRUE ~ NA_real_  
+  ))
+
+table(Interventions$openend, useNA = "always")
+
+
+# Full length of timer per condition (in seconds)
+Interventions <- Interventions %>%
+  mutate(timer = case_when(
+    condition == "ControlCondition" ~ 10,
+    condition == "CorrectingMisperceptions" ~ 10,
+    condition == "DistrustSalience" ~ 10,
+    condition == "DynamicNorms" ~ 10,
+    condition == "EscalatingCommitment" ~ 22,
+    condition == "ImplementationIntentions" ~ 20,
+    condition == "InterdependentConstrual" ~ 10,
+    condition == "MoralReasons" ~ 60,
+    condition == "PersonalImportance" ~ 32,
+    condition == "SelfGeneratedNorms" ~ 11,
+    condition == "SystemJustification" ~ 13,
+    TRUE ~ NA_real_  
+  ))
+
+table(Interventions$timer, useNA = "always")
+
+
+# Pages to advance 
+Interventions <- Interventions %>%
+  mutate(pages = case_when(
+    condition == "ControlCondition" ~ 2,
+    condition == "CorrectingMisperceptions" ~ 3,
+    condition == "DistrustSalience" ~ 1,
+    condition == "DynamicNorms" ~ 3,
+    condition == "EscalatingCommitment" ~ 8,
+    condition == "ImplementationIntentions" ~ 2,
+    condition == "InterdependentConstrual" ~ 1,
+    condition == "MoralReasons" ~ 2,
+    condition == "PersonalImportance" ~ 9,
+    condition == "SelfGeneratedNorms" ~ 3,
+    condition == "SystemJustification" ~ 3,
+    TRUE ~ NA_real_  
+  ))
+
+table(Interventions$pages, useNA = "always")
+
+view(Interventions)
+
+# Table of features
+intervention_features_tbl <- Interventions %>%
+  transmute(
+    Condition = condition,
+    `Words (Count)` = word_count,
+    `Multiple Choice (Count)` = mc,
+    `Open Ended (Count)` = openend,
+    `Seconds` = timer,
+    `Pages (Count)` = pages
+  ) %>%
+  arrange(Condition) 
+
+View(intervention_features_tbl)
+
+# Merge into full dataset (before attriters removed)
+df_preexclude_intfeatures <- df_preexclude %>%
+  left_join(Interventions, by = "condition") %>%
+  dplyr::select(Finished_n, condition, word_count, mc, openend, timer, pages)
+
+head(df_preexclude_intfeatures)
+
+attrition_condition <- df_preexclude_intfeatures %>%
+  group_by(condition) %>%
+  summarise(
+    completion_rate = mean(Finished_n, na.rm = TRUE),
+    word_count = first(word_count),
+    mc = first(mc),
+    openend = first(openend),
+    timer = first(timer),
+    pages = first(pages),
+    n = n()
+  )
+
+attrition_condition
+
+attrition_condition_nocontrol <- attrition_condition %>%
+  filter(condition != "ControlCondition")
+
+# Correlations between features
+attrition_condition_nocontrol %>%
+  select(word_count, mc, openend, timer, pages) %>%
+  cor() # Some highly correlated --> estimate in separate models
+
+# Models predicting completion from features
+AttritionPredictors_WordCount_Model <- lm(completion_rate ~ word_count,
+   data = attrition_condition_nocontrol)
+summary(AttritionPredictors_WordCount_Model) # NS
+
+AttritionPredictors_MC_Model <- lm(completion_rate ~ mc,
+   data = attrition_condition_nocontrol)
+summary(AttritionPredictors_MC_Model) # NS
+
+AttritionPredictors_OpenEnd_Model <- lm(completion_rate ~ openend,
+   data = attrition_condition_nocontrol)
+summary(AttritionPredictors_OpenEnd_Model) # Marginal
+
+AttritionPredictors_Timer_Model <- lm(completion_rate ~ timer,
+   data = attrition_condition_nocontrol)
+summary(AttritionPredictors_Timer_Model) # Sig
+
+AttritionPredictors_Pages_Model <- lm(completion_rate ~ pages,
+   data = attrition_condition_nocontrol)
+summary(AttritionPredictors_Pages_Model) # NS
+
+# Table
+
+# Combine condition-level models
+attrition_feature_models <- list(
+  "Words (Count)" = AttritionPredictors_WordCount_Model,
+  "Multiple Choice (Count)" = AttritionPredictors_MC_Model,
+  "Open Ended (Count)" = AttritionPredictors_OpenEnd_Model,
+  "Seconds" = AttritionPredictors_Timer_Model,
+  "Pages (Count)" = AttritionPredictors_Pages_Model
+)
+
+# Extract predictor coefficient from each model
+attrition_features_results <- purrr::imap_dfr(
+  attrition_feature_models,
+  function(model, feature) {
+    
+    x <- summary(model)$coefficients[2, ]
+    
+    tibble(
+      Variable = feature,
+      b = x["Estimate"],
+      SE = x["Std. Error"],
+      t = x["t value"],
+      p = x["Pr(>|t|)"]
+    )
+  }
+)
+
+attrition_features_results
+
+attrition_features_results <- purrr::imap_dfr(
+  attrition_feature_models,
+  function(model, feature) {
+    
+    x <- summary(model)$coefficients[2, ]
+    ci <- confint(model, level = .95)[2, ]
+    
+    tibble(
+      Variable = feature,
+      b = x["Estimate"],
+      SE = x["Std. Error"],
+      t = x["t value"],
+      p = x["Pr(>|t|)"],
+      `95% Lower` = ci[1],
+      `95% Upper` = ci[2]
+    )
+  }
+)
+
+attrition_features_results
+
+```
+
+########################################### Baseline Political Interest by Condition on Attrition
+
+```{r, Baseline interest*condition predicting attrition}
+
+# Is the effect of condition on attrition moderated by political interest?
+
+# Effects coded condition for omnibus effects
+df_preexclude$cond_e <- factor(df_preexclude$condition)
+contrasts(df_preexclude$cond_e) <- contr.sum(nlevels(df_preexclude$cond_e))
+
+# Center interest
+df_preexclude$interest_c <- df_preexclude$interest - (mean(df_preexclude$interest, na.rm = T))
+mean(df_preexclude$interest_c, na.rm = T)
+
+# Model
+Attrition_Interest_Full_Omnibus <- lm(Finished_n ~ cond_e*interest_c, data = df_preexclude)
+summary(Attrition_Interest_Full_Omnibus)
+
+Attrition_Interest_Full_Omnibus_anova <- Anova(Attrition_Interest_Full_Omnibus, type = "III")
+Attrition_Interest_Full_Omnibus_anova
+
+# Format for LateX
+Attrition_Interest_Full_Omnibus_anova_Results <- format_anova_type3_to_latex(Attrition_Interest_Full_Omnibus)
+
+print.xtable(Attrition_Interest_Full_Omnibus_anova_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+
+##################################################################################################################### 
+######################################## Attrition-Related Robustness Checks ######################################## 
+##################################################################################################################### 
+
+########################################### Registration Whole Sample (Before Removing Attriters) NA as 0
+
+```{r, Registration one-tailed full sample NA as 0 (OLS)}
+
+# Create new df so can make NA on register outcome = 0.
+df_regNaAs0 <- df_preexclude
+
+# Code NA as 0
+df_regNaAs0$register_n[is.na(df_regNaAs0$register_n)] <- 0
+
+# Check
+table(df_preexclude$register_n, useNA = "ifany") # Shows the NAs
+table(df_regNaAs0$register_n, useNA = "ifany") # No NAs, good
+
+##
+
+# Fit the model
+RegistrationFull_Model_1 <- lm(register_n ~ condition, data = df_regNaAs0) 
+summary(RegistrationFull_Model_1)
+
+RegistrationFull_Model_1_robust <- coeftest(RegistrationFull_Model_1, vcov = vcovHC(RegistrationFull_Model_1, type = "HC3"))
+RegistrationFull_Model_1_robust
+
+# Use two tailed binary lm function to format
+RegistrationFull_Model_1_Results <- format_lm_bin_output_onetailed(RegistrationFull_Model_1_robust, RegistrationFull_Model_1)
+
+# Outputs:
+RegistrationFull_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(RegistrationFull_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+```
+
+########################################### Primary Models After Excluding High Attrition Conditions
+
+```{r, Identify high-attrition conditions}
+
+# Based on completion of full study, so use Attrition_Model_2 (though results same when use Attrition_Model_1)
+
+# Get predicted attrition values by condition
+pred_df <- data.frame(condition = levels(df_preexclude$condition))
+
+pred_df$predicted_completion <- predict(
+  Attrition_Model_2,
+  newdata = pred_df
+)
+
+pred_df
+
+# Convert to attrition rates
+pred_df <- pred_df %>%
+  mutate(attrition = 1 - predicted_completion)
+
+pred_df
+
+control_attrition <- pred_df %>%
+  filter(condition == "ControlCondition") %>%
+  pull(attrition)
+
+control_attrition 
+
+# Conditions with attrition at or more than 25% higher than control
+pred_df <- pred_df %>% mutate(high_attrition = attrition >= 1.25 * control_attrition)
+
+pred_df
+
+table(pred_df$high_attrition)
+
+# Create df without EscalatingCommitment, ImplementationIntentions, MoralReasons, PersonalImportance, SelfGeneratedNorms, SystemJustification
+df_no_high_attrition_conds <- df %>%
+  filter(!condition %in% c("EscalatingCommitment", "ImplementationIntentions", "MoralReasons", 
+                        "PersonalImportance", "SelfGeneratedNorms", "SystemJustification"))
+
+# Drop conditions with n = 0
+df_no_high_attrition_conds <- df_no_high_attrition_conds %>%
+  mutate(condition = relevel(droplevels(factor(condition)), ref = "ControlCondition"))
+
+table(df$condition)
+table(df_no_high_attrition_conds$condition)
+
+# % of sample lost
+n_no_high_attrit <- nrow(df_no_high_attrition_conds) # 5983
+n_final <- nrow(df) # 12927
+
+pct_deleted <- round((1 - n_no_high_attrit / n_final) * 100, 2)
+pct_deleted
+# 53.72
+
+```
+
+```{r, Primary models after excluding high attrition conditions - voting intentions}
+
+# Voting Intentions
+
+# Fit the model 
+NoHighAttritionConds_Intentions_Model_1 <- lm(voteInt ~ condition, data = df_no_high_attrition_conds)
+summary(NoHighAttritionConds_Intentions_Model_1)
+
+NoHighAttritionConds_Intentions_Model_1_robust <- coeftest(NoHighAttritionConds_Intentions_Model_1, vcov = vcovHC(NoHighAttritionConds_Intentions_Model_1, type = "HC3"))
+NoHighAttritionConds_Intentions_Model_1_robust
+
+# Use one tailed lm function to format
+NoHighAttritionConds_Intentions_Model_1_Results <- format_lm_output_onetailed(NoHighAttritionConds_Intentions_Model_1_robust, NoHighAttritionConds_Intentions_Model_1)
+
+# Outputs:
+NoHighAttritionConds_Intentions_Model_1_robust
+NoHighAttritionConds_Intentions_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(NoHighAttritionConds_Intentions_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+#
+
+# Joint F test voting intentions excluding high attrition conditions
+linearHypothesis(
+  NoHighAttritionConds_Intentions_Model_1,
+  matchCoefs(NoHighAttritionConds_Intentions_Model_1, "condition"),
+  vcov = vcovHC(NoHighAttritionConds_Intentions_Model_1, type = "HC3"),
+  test = "F"
+)
+
+```
+
+```{r, Primary models after excluding high attrition conditions - link clicks}
+
+# Link clicks 
+
+# Fit the model (use OLS)
+NoHighAttritionConds_Link_Model_1 <- lm(linkClicked_n ~ condition, data = df_no_high_attrition_conds) 
+summary(NoHighAttritionConds_Link_Model_1)
+
+NoHighAttritionConds_Link_Model_1_robust <- coeftest(NoHighAttritionConds_Link_Model_1, vcov = vcovHC(NoHighAttritionConds_Link_Model_1, type = "HC3"))
+NoHighAttritionConds_Link_Model_1_robust
+
+# Use one tailed lm function to format
+NoHighAttritionConds_Link_Model_1_Results <- format_lm_bin_output_onetailed(NoHighAttritionConds_Link_Model_1_robust, NoHighAttritionConds_Link_Model_1)
+
+# Outputs:
+NoHighAttritionConds_Link_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(NoHighAttritionConds_Link_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+#
+
+# Joint F test link clicks excluding high attrition conditions
+linearHypothesis(
+  NoHighAttritionConds_Link_Model_1,
+  matchCoefs(NoHighAttritionConds_Link_Model_1, "condition"),
+  vcov = vcovHC(NoHighAttritionConds_Link_Model_1, type = "HC3"),
+  test = "F"
+)
+
+```
+
+```{r, Primary models after excluding high attrition conditions - registration}
+
+# Registration
+
+# Fit the model (use OLS)
+NoHighAttritionConds_Registration_Model_1 <- lm(register_n ~ condition, data = df_no_high_attrition_conds) 
+summary(NoHighAttritionConds_Registration_Model_1)
+
+NoHighAttritionConds_Registration_Model_1_robust <- coeftest(NoHighAttritionConds_Registration_Model_1, vcov = vcovHC(NoHighAttritionConds_Registration_Model_1, type = "HC3"))
+NoHighAttritionConds_Registration_Model_1_robust
+
+# Use one tailed lm function to format
+NoHighAttritionConds_Registration_Model_1_Results <- format_lm_bin_output_onetailed(NoHighAttritionConds_Registration_Model_1_robust, NoHighAttritionConds_Registration_Model_1)
+
+# Outputs:
+NoHighAttritionConds_Registration_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(NoHighAttritionConds_Registration_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+#
+
+# Joint F test registration excluding high attrition conditions
+linearHypothesis(
+  NoHighAttritionConds_Registration_Model_1,
+  matchCoefs(NoHighAttritionConds_Registration_Model_1, "condition"),
+  vcov = vcovHC(NoHighAttritionConds_Registration_Model_1, type = "HC3"),
+  test = "F"
+)
+
+```
+
+```{r, Primary models after excluding high attrition conditions - voting}
+
+# Voting
+
+# Fit the model (use OLS)
+NoHighAttritionConds_Vote_Model_1 <- lm(vote_n ~ condition, data = df_no_high_attrition_conds) 
+summary(NoHighAttritionConds_Vote_Model_1)
+
+NoHighAttritionConds_Vote_Model_1_robust <- coeftest(NoHighAttritionConds_Vote_Model_1, vcov = vcovHC(NoHighAttritionConds_Vote_Model_1, type = "HC3"))
+NoHighAttritionConds_Vote_Model_1_robust
+
+# Use one tailed lm function to format
+NoHighAttritionConds_Vote_Model_1_Results <- format_lm_bin_output_onetailed(NoHighAttritionConds_Vote_Model_1_robust, NoHighAttritionConds_Vote_Model_1)
+
+# Outputs:
+NoHighAttritionConds_Vote_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(NoHighAttritionConds_Vote_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+#
+
+# Joint F test voting excluding high attrition conditions
+linearHypothesis(
+  NoHighAttritionConds_Vote_Model_1,
+  matchCoefs(NoHighAttritionConds_Vote_Model_1, "condition"),
+  vcov = vcovHC(NoHighAttritionConds_Vote_Model_1, type = "HC3"),
+  test = "F"
+)
+
+```
+
+```{r, Primary models after excluding high attrition conditions - trust}
+
+# Trust
+
+# Fit the model (use OLS)
+NoHighAttritionConds_TrustAgg_Model_1 <- lm(trust_agg ~ condition, data = df_no_high_attrition_conds) 
+summary(NoHighAttritionConds_TrustAgg_Model_1)
+
+NoHighAttritionConds_TrustAgg_Model_1_robust <- coeftest(NoHighAttritionConds_TrustAgg_Model_1, vcov = vcovHC(NoHighAttritionConds_TrustAgg_Model_1, type = "HC3"))
+NoHighAttritionConds_TrustAgg_Model_1_robust
+
+# Use one tailed lm function to format
+NoHighAttritionConds_TrustAgg_Model_1_Results <- format_lm_output_twotailed(NoHighAttritionConds_TrustAgg_Model_1_robust, NoHighAttritionConds_TrustAgg_Model_1)
+
+# Outputs:
+NoHighAttritionConds_TrustAgg_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(NoHighAttritionConds_TrustAgg_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+#
+
+# Joint F test trust excluding high attrition conditions
+linearHypothesis(
+  NoHighAttritionConds_TrustAgg_Model_1,
+  matchCoefs(NoHighAttritionConds_TrustAgg_Model_1, "condition"),
+  vcov = vcovHC(NoHighAttritionConds_TrustAgg_Model_1, type = "HC3"),
+  test = "F"
+)
+
+```
+
+```{r, Primary models after excluding high attrition conditions - efficacy}
+
+# Efficacy
+
+# Fit the model (use OLS)
+NoHighAttritionConds_Efficacy_Model_1 <- lm(efficacy ~ condition, data = df_no_high_attrition_conds) 
+summary(NoHighAttritionConds_Efficacy_Model_1)
+
+NoHighAttritionConds_Efficacy_Model_1_robust <- coeftest(NoHighAttritionConds_Efficacy_Model_1, vcov = vcovHC(NoHighAttritionConds_Efficacy_Model_1, type = "HC3"))
+
+# Use one tailed lm function to format
+NoHighAttritionConds_Efficacy_Model_1_Results <- format_lm_output_twotailed(NoHighAttritionConds_Efficacy_Model_1_robust, NoHighAttritionConds_Efficacy_Model_1)
+
+# Outputs:
+NoHighAttritionConds_Efficacy_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(NoHighAttritionConds_Efficacy_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+#
+
+# Joint F test efficacy excluding high attrition conditions
+linearHypothesis(
+  NoHighAttritionConds_Efficacy_Model_1,
+  matchCoefs(NoHighAttritionConds_Efficacy_Model_1, "condition"),
+  vcov = vcovHC(NoHighAttritionConds_Efficacy_Model_1, type = "HC3"),
+  test = "F"
+)
+
+```
+
+```{r, Primary models after excluding high attrition conditions - norms}
+
+# Norms
+
+# Fit the model (use OLS)
+NoHighAttritionConds_Norms_Model_1 <- lm(norms ~ condition, data = df_no_high_attrition_conds) 
+summary(NoHighAttritionConds_Norms_Model_1)
+
+NoHighAttritionConds_Norms_Model_1_robust <- coeftest(NoHighAttritionConds_Norms_Model_1, vcov = vcovHC(NoHighAttritionConds_Norms_Model_1, type = "HC3"))
+NoHighAttritionConds_Norms_Model_1_robust
+
+# Use one tailed lm function to format
+NoHighAttritionConds_Norms_Model_1_Results <- format_lm_output_twotailed(NoHighAttritionConds_Norms_Model_1_robust, NoHighAttritionConds_Norms_Model_1)
+
+# Outputs:
+NoHighAttritionConds_Norms_Model_1_Results$appendix   # Cleaned and formatted for LaTeX
+
+print.xtable(NoHighAttritionConds_Norms_Model_1_Results$appendix_xtable, include.rownames = FALSE) # Syntax for latex editor
+
+#
+
+# Joint F test norms excluding high attrition conditions
+linearHypothesis(
+  NoHighAttritionConds_Norms_Model_1,
+  matchCoefs(NoHighAttritionConds_Norms_Model_1, "condition"),
+  vcov = vcovHC(NoHighAttritionConds_Norms_Model_1, type = "HC3"),
+  test = "F"
+)
+
+```
+
+########################################### Lee Bounds Robustness Checks
+
+```{r, Lee bounds - prepare data}
+
+leebound_df <- read.csv('Voter_Reg_Lee_Bounds.csv') 
+# Read in the data set that does not exclude people who dropped out AFTER being assigned into a condition
+
+# Check to make sure each variable includes NAs for those who dropped out 
+table(leebound_df$condition, useNA = "always") # Should not be any NAs here since everyone assigned a condition
+
+# Vars with NO item-level missingness 
+# 0s and 1s should match in both dfs. People who did not finish the survey should be NA
+
+table(leebound_df$linkClicked, useNA = "always") # 1262 NAs
+table(df$linkClicked, useNA = "always") # 0 NAs
+ 
+table(leebound_df$register, useNA = "always") # 1262 NAs
+table(df$register, useNA = "always") # 0 NAs
+
+table(leebound_df$vote, useNA = "always") # 1262 NAs
+table(df$vote, useNA = "always") # 0 NAs
+
+# Vars with item-level missingness  
+# Can be extra NAs here since some people finished survey but did not fill out this measure
+
+table(leebound_df$voteInt, useNA = "always") # 1519 NAs
+table(df$voteInt, useNA = "always")# 257 NAs
+
+table(leebound_df$trust_agg, useNA = "always") # 1315 NAs
+table(df$trust_agg, useNA = "always") # 53 NAs
+
+table(leebound_df$efficacy, useNA = "always") # 1317 NAs
+table(df$efficacy, useNA = "always") # 55 NAs
+
+table(leebound_df$norms, useNA = "always") # 1319 NAs
+table(df$norms, useNA = "always") # 57 NAs
+
+# Check to make sure that all people who dropped have NAs for each outcome (should return 0s)
+leebound_df %>%
+  filter(Finished != "True" & !is.na(linkClicked))
+
+leebound_df %>%
+  filter(Finished != "True" & !is.na(register))
+
+leebound_df %>%
+  filter(Finished != "True" & !is.na(vote))
+
+leebound_df %>%
+  filter(Finished != "True" & !is.na(voteInt)) 
+
+leebound_df %>%
+  filter(Finished != "True" & !is.na(trust_agg)) 
+
+leebound_df %>%
+  filter(Finished != "True" & !is.na(efficacy)) 
+
+leebound_df %>%
+  filter(Finished != "True" & !is.na(norms)) 
+
+# Table of completion rate per condition
+leebound_df %>%
+  group_by(condition) %>%
+  dplyr::summarize(
+    completion_rate = mean(Finished == "True", na.rm = TRUE),
+    n = n()
+  )
+
+```
+
+```{r, Calculate Lee bounded estimates for each DV}
+
+# Set the control label
+control <- "ControlCondition"
+
+# List the treatment conditions (without the control)
+treatments <- sort(setdiff(unique(leebound_df$condition), control))
+
+# Set outcomes
+outcomes <- c("voteInt", "linkClicked", "register", "vote", "trust_agg", "efficacy", "norms")
+
+# Apply Lee Bounds function to each outcome and print
+lee_results <- do.call(rbind,
+  lapply(outcomes, function(out) {
+    do.call(rbind,
+      lapply(treatments, function(tr) {
+        lee_bounds_simple(leebound_df, out, tr, control)
+      })
+    )
+  })
+)
+
+lee_results
+
+binary_outcomes <- c("linkClicked", "register", "vote")
+
+lee_results <- lee_results %>%
+  mutate(across(
+    c(actual_estimate, lower_bound, upper_bound),
+    ~ ifelse(outcome %in% binary_outcomes, . * 100, .)
+  )) %>%
+  mutate(across(
+    c(actual_estimate, lower_bound, upper_bound),
+    ~ sprintf("%.2f", .)
+  ))
+
+# Remove blank column
+rownames(lee_results) <- NULL  # Drop additional column  
+
+view(lee_results) # Paste into excel and then into Latex
+
+# Note that Distrust Salience has very similar estimates for link clicks
+# B/c retention rates are almost identical
+leebound_df %>%
+  dplyr::filter(condition %in% c("ControlCondition", "DistrustSalience")) %>%
+  dplyr::group_by(condition) %>%
+  dplyr::summarise(
+    retention = mean(Finished == "True" & !is.na(linkClicked), na.rm = TRUE),
+    n = dplyr::n()
+  ) # Very similar
+
+```
+
